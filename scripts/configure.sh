@@ -57,12 +57,12 @@ for pkg in servicenow microsoft_defender_endpoint; do
     log "installed package $pkg $pver"
   fi
 done
-# remove the earlier custom filestream stand-ins for these two, if present
+# remove earlier custom stand-ins that were replaced (ServiceNow, Defender, USB laundry kiosk), if present
 kb GET "/api/fleet/package_policies?perPage=200"; require_2xx "list package policies"
-legacy="$(printf '%s' "$HTTP_BODY" | jq -c '[.items[] | select(.name=="servicenow-logs-ot-demo" or .name=="defender-logs-ot-demo") | .id]')"
+legacy="$(printf '%s' "$HTTP_BODY" | jq -c '[.items[] | select(.name=="servicenow-logs-ot-demo" or .name=="defender-logs-ot-demo" or .name=="usb-laundry-logs-ot-demo") | .id]')"
 if [[ $legacy != "[]" ]]; then
   kb POST /api/fleet/package_policies/delete -d "{\"packagePolicyIds\":$legacy}"; require_2xx "delete legacy stand-in policies"
-  log "removed custom filestream stand-ins for ServiceNow and Defender"
+  log "removed superseded custom filestream policies (ServiceNow, Defender, USB laundry)"
 fi
 
 # ---- 2c. ingest pipelines referenced by custom Fleet policies (Meta Data Kiosk syslog -> ECS) -------

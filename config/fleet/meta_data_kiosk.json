@@ -11,7 +11,7 @@
     "udp-udp": {
       "enabled": true,
       "streams": {
-        "udp.generic": {
+        "udp.udp": {
           "enabled": true,
           "vars": {
             "listen_address": "127.0.0.1",
