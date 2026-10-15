@@ -4,8 +4,9 @@
 #   2. create ot-assets index (skip if present) and load assets
 #   3. create Fleet package policies (only if absent) for "ot-demo-policy"
 #   4. import dashboards (overwrite=true)
-#   5. create (or delete and recreate) the detection rule and validate it
+#   5. create (or delete and recreate) the detection rules (config/detection/*.json) and validate them
 #   6. set config_ready=true in shared/env.json
+#   7. send the one-shot EWS compromise sequence that fires the correlation rule (best effort, needs SSH to the host)
 set -euo pipefail
 # shellcheck source=lib.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -15,9 +16,9 @@ A_INDEX="$CONFIG_DIR/assets/ot-assets-index.json"
 A_BULK="$CONFIG_DIR/assets/ot-assets.ndjson"
 FLEET_DIR="$CONFIG_DIR/fleet"
 DASH="$CONFIG_DIR/dashboards/ot-dashboards.ndjson"
-RULE="$CONFIG_DIR/detection/claroty-suppressed-alert.json"
+RULES=("$CONFIG_DIR"/detection/*.json)
 
-for f in "$A_INDEX" "$A_BULK" "$DASH" "$RULE"; do [[ -s $f ]] || die "missing config file: $f"; done
+for f in "$A_INDEX" "$A_BULK" "$DASH" "${RULES[@]}"; do [[ -s $f ]] || die "missing config file: $f"; done
 
 load_env
 wait_for "Elasticsearch" "$ES_URL" "/" 900
@@ -106,41 +107,52 @@ require_2xx "import dashboards"
 [[ "$(printf '%s' "$HTTP_BODY" | jq -r '.success')" == true ]] || die "dashboard import not successful: $(printf '%s' "$HTTP_BODY" | head -c 800)"
 log "imported $(printf '%s' "$HTTP_BODY" | jq -r '.successCount') saved objects"
 
-# ---- 5. detection rule ----------------------------------------------------
-rule_id="$(jq -r '.rule_id // empty' "$RULE")"
-rule_name="$(jq -r '.name' "$RULE")"
-found=0
-if [[ -n $rule_id ]]; then
-  kb GET "/api/detection_engine/rules?rule_id=$rule_id"
-  [[ $HTTP_CODE == 200 ]] && found=1
-else
-  kb GET "/api/detection_engine/rules/_find?per_page=200"; require_2xx "list rules"
-  printf '%s' "$HTTP_BODY" | jq -e --arg n "$rule_name" '.data[] | select(.name==$n)' >/dev/null 2>&1 && found=1
-fi
-if [[ $found -eq 1 && -n $rule_id ]]; then
-  # Recreate rather than PUT: an in-place update left the rule stuck on "Unable to find matching indices"
-  # (searches=0) in this environment, while a freshly created rule runs normally.
-  kb DELETE "/api/detection_engine/rules?rule_id=$rule_id"
-  require_2xx "delete detection rule for recreation"
-  kb POST /api/detection_engine/rules --data-binary "@$RULE"
-  require_2xx "recreate detection rule"
-  log "recreated detection rule '$rule_name'"
-elif [[ $found -eq 1 ]]; then
-  log "detection rule '$rule_name' exists (no rule_id to update by), skipping"
-else
-  kb POST /api/detection_engine/rules --data-binary "@$RULE"
-  require_2xx "create detection rule"
-  log "created detection rule '$rule_name'"
-fi
-# validate: rule must exist, be enabled and carry alert suppression
-if [[ -n $rule_id ]]; then
-  kb GET "/api/detection_engine/rules?rule_id=$rule_id"; require_2xx "fetch detection rule"
-  printf '%s' "$HTTP_BODY" | jq -e '.alert_suppression.group_by | length > 0' >/dev/null \
-    || die "rule has no alert_suppression.group_by"
-  [[ "$(printf '%s' "$HTTP_BODY" | jq -r '.enabled')" == true ]] || warn "rule is not enabled"
-  log "rule validated (suppression group_by: $(printf '%s' "$HTTP_BODY" | jq -c '.alert_suppression.group_by'))"
-fi
+# ---- 5. detection rules ---------------------------------------------------
+for RULE in "${RULES[@]}"; do
+  rule_id="$(jq -r '.rule_id // empty' "$RULE")"
+  rule_name="$(jq -r '.name' "$RULE")"
+  found=0
+  if [[ -n $rule_id ]]; then
+    kb GET "/api/detection_engine/rules?rule_id=$rule_id"
+    [[ $HTTP_CODE == 200 ]] && found=1
+  else
+    kb GET "/api/detection_engine/rules/_find?per_page=200"; require_2xx "list rules"
+    printf '%s' "$HTTP_BODY" | jq -e --arg n "$rule_name" '.data[] | select(.name==$n)' >/dev/null 2>&1 && found=1
+  fi
+  if [[ $found -eq 1 && -n $rule_id ]]; then
+    # Recreate rather than PUT: an in-place update left the rule stuck on "Unable to find matching indices"
+    # (searches=0) in this environment, while a freshly created rule runs normally.
+    kb DELETE "/api/detection_engine/rules?rule_id=$rule_id"
+    require_2xx "delete detection rule for recreation"
+    kb POST /api/detection_engine/rules --data-binary "@$RULE"
+    require_2xx "recreate detection rule"
+    log "recreated detection rule '$rule_name'"
+  elif [[ $found -eq 1 ]]; then
+    log "detection rule '$rule_name' exists (no rule_id to update by), skipping"
+  else
+    kb POST /api/detection_engine/rules --data-binary "@$RULE"
+    require_2xx "create detection rule"
+    log "created detection rule '$rule_name'"
+  fi
+  # validate: rule must exist, be enabled and carry alert suppression
+  if [[ -n $rule_id ]]; then
+    kb GET "/api/detection_engine/rules?rule_id=$rule_id"; require_2xx "fetch detection rule"
+    printf '%s' "$HTTP_BODY" | jq -e '.alert_suppression.group_by | length > 0' >/dev/null \
+      || die "rule has no alert_suppression.group_by"
+    [[ "$(printf '%s' "$HTTP_BODY" | jq -r '.enabled')" == true ]] || warn "rule is not enabled"
+    log "rule validated (suppression group_by: $(printf '%s' "$HTTP_BODY" | jq -c '.alert_suppression.group_by'))"
+  fi
+done
 
 # ---- 6. done --------------------------------------------------------------
 env_set config_ready true json
 log "configuration complete (config_ready=true)"
+
+# ---- 7. EWS compromise sequence (fires the VPN -> Defender -> Claroty correlation rule once) ----
+# Needs SSH to the host (Claroty and FortiGate lines go through the agent). Not fatal: run it later with
+# ./scripts/run-scenario.sh ews-compromise. The agent must already be running its policy, or the lines are lost.
+if "$LIB_DIR/run-scenario.sh" ews-compromise; then
+  log "EWS compromise sequence sent; the correlation rule alerts on its next run (15m interval)"
+else
+  warn "EWS compromise sequence not sent; run ./scripts/run-scenario.sh ews-compromise once the host agent is up"
+fi

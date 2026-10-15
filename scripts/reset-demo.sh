@@ -4,6 +4,7 @@
 # - deletes cases tagged "ot-demo" (falls back to nothing destructive beyond that tag)
 # - deletes the demo detection-rule alerts (falls back to closing them)
 # - deletes all documents in the ten demo data streams, keeping the streams (skip with --keep-data)
+# - re-sends the one-shot EWS compromise sequence so the VPN/Defender/Claroty correlation rule fires once (skip with --keep-data)
 # - sets demo_executed=false; with --rerun triggers the scenario again afterwards
 set -euo pipefail
 # shellcheck source=lib.sh
@@ -19,7 +20,7 @@ for a in "$@"; do
   esac
 done
 
-RULE="$CONFIG_DIR/detection/claroty-suppressed-alert.json"
+RULES=("$CONFIG_DIR"/detection/*.json)
 STREAMS=(logs-claroty_ctd.event-default logs-fortinet_fortigate.log-default logs-ot_endpoint.events-default logs-meta_data_kiosk.log-default logs-microsoft_defender_endpoint.log-default logs-servicenow.event-default logs-plc4x.telemetry-default logs-opcua.telemetry-default logs-claroty_ctd.asset-default logs-claroty_ctd.baseline-default)
 ALERTS_INDEX=".alerts-security.alerts-default"
 
@@ -41,10 +42,10 @@ else
 fi
 
 # ---- alerts --------------------------------------------------------------
-rname="$(jq -r '.name' "$RULE")"
-aq="$(jq -n --arg n "$rname" '{query:{bool:{filter:[{term:{"kibana.alert.rule.name":$n}}]}}}')"
+names="$(jq -s -c '[.[].name]' "${RULES[@]}")"
+aq="$(jq -n --argjson n "$names" '{query:{bool:{filter:[{terms:{"kibana.alert.rule.name":$n}}]}}}')"
 if es POST "/$ALERTS_INDEX/_delete_by_query?refresh=true&conflicts=proceed" -d "$aq" && is_2xx; then
-  log "deleted $(printf '%s' "$HTTP_BODY" | jq -r '.deleted') alert(s) for rule '$rname'"
+  log "deleted $(printf '%s' "$HTTP_BODY" | jq -r '.deleted') alert(s) for the demo rules"
 else
   warn "alert delete not permitted (HTTP $HTTP_CODE); closing alerts instead"
   kb POST /api/detection_engine/signals/status -d "$(jq -n --argjson q "$aq" '{query:$q.query,status:"closed"}')"
@@ -66,6 +67,16 @@ if [[ $KEEP_DATA -eq 0 ]]; then
   done
 else
   log "--keep-data: leaving data streams untouched"
+fi
+
+if [[ $KEEP_DATA -eq 0 ]]; then
+  # The data deletion above removed the previous sequence; send it again so the rule fires once per reset.
+  # The rule's 4h alert suppression keeps repeated rule runs to that single alert.
+  if "$(dirname "${BASH_SOURCE[0]}")/run-scenario.sh" ews-compromise; then
+    log "EWS compromise sequence sent"
+  else
+    warn "EWS compromise sequence not sent; run ./scripts/run-scenario.sh ews-compromise"
+  fi
 fi
 
 env_set demo_executed false json

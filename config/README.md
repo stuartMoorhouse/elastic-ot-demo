@@ -15,6 +15,7 @@ Nothing here has been applied to a cluster. Target: Elastic Cloud 9.5. All reque
 | fleet/opcua_telemetry.json | SAMPLE substation values (OPC UA client shape), filestream policy, `/var/log/ot-demo/opcua.ndjson`, dataset `opcua.telemetry` | `POST /api/fleet/package_policies` |
 | (none) Claroty asset and baseline, Defender alerts, ServiceNow incidents | Loaded by `scripts/load-api-data.sh` as bulk requests into the real integrations' own data streams (`logs-claroty_ctd.asset-default`, `logs-claroty_ctd.baseline-default`, `logs-microsoft_defender_endpoint.log-default`, `logs-servicenow.event-default`) as raw API JSON, parsed by each integration's ingest pipeline. The Defender and ServiceNow packages are installed by `configure.sh` but have no policy (no tenant or instance). A Fleet filestream policy cannot write into another package's data stream without a force flag that would overwrite its template. | `POST /_bulk` |
 | detection/claroty-suppressed-alert.json | Query rule with alert suppression | `POST /api/detection_engine/rules` |
+| detection/ot-ews-vpn-defender-claroty.json | ES\|QL correlation rule (FortiGate VPN, Defender, Claroty on one workstation) with alert suppression | `POST /api/detection_engine/rules` |
 | cases/case-template.json | Body for the grouped-alert case | `POST /api/cases` |
 | dashboards/ot-dashboards.ndjson | 3 data views + 3 dashboards (legacy saved objects) | `POST /api/saved_objects/_import` |
 | dashboards/api/*.json | Same 3 dashboards, Dashboards API format (fallback or alternative) | `POST /api/dashboards` (9.4+) |

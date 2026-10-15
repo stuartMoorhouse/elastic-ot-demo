@@ -4,6 +4,8 @@
 Modes:
   noise     continuous background traffic + repetitive low-severity Claroty alerts
   backfill  history with historical timestamps (--hours N)
+  ews-compromise  one-shot VPN hops and Claroty PLC program downloads on KPP-ENG-WS02 (ews-defender adds the
+            Defender alert between them as bulk lines)
   scenario  false-positive storyline (burst of identical Claroty alerts, FortiGate
             ENG-to-PLC-S7 hits, engineer logon + TIA Portal process)
 
@@ -29,7 +31,7 @@ ASSETS = {
     "KPP-PLC-T2": "10.20.4.12", "KPP-RTU-SS1": "10.20.4.30",
     "KPP-ENG-WS01": "10.20.3.21", "KPP-HMI-01": "10.20.3.10",
     "KPP-HIST-01": "10.20.3.40", "FGT-KPP-OT01": "10.20.0.1",
-    "KPP-USB-KIOSK01": "10.20.0.50",
+    "KPP-USB-KIOSK01": "10.20.0.50", "KPP-ENG-WS02": "10.20.3.22",
 }
 PLC, RTU, ENG, HMI, HIST, FGT = (ASSETS[k] for k in (
     "KPP-PLC-T2", "KPP-RTU-SS1", "KPP-ENG-WS01", "KPP-HMI-01", "KPP-HIST-01", "FGT-KPP-OT01"))
@@ -58,6 +60,12 @@ UNKNOWN_SRC = "10.20.9.77"
 FLOW_THREAT = (17, "Contractor-VPN-to-OT", UNKNOWN_SRC, PLC, "S7", 102, 6, "port1", "port3")
 THREAT_ALERTS = [("PLC_PROG_DL", "PLC Program Download Detected", 8),
                  ("S7_READ_SCAN", "S7 Unauthorized Read/Scan", 7)]
+# Correlation storyline (ews-compromise mode): stolen VPN credentials reach a second engineering workstation, Defender
+# flags it, then Claroty sees it modify the PLC. Used by the "OT: VPN access, EWS compromise and PLC change" rule.
+EWS2 = ASSETS["KPP-ENG-WS02"]
+VPN_POOL_IP = "10.99.0.15"  # inside the rule's VPN pool CIDR 10.99.0.0/24
+VPN_USER = "contractor.hale"
+FLOW_VPN_EWS = (18, "SSLVPN-to-EWS-RDP", VPN_POOL_IP, EWS2, "RDP", 3389, 6, "ssl.root", "port2")
 ENDPOINT_FILE = "/var/log/ot-demo/endpoint.ndjson"
 KIOSK = "KPP-USB-KIOSK01"
 # Raw Microsoft Defender for Endpoint alert and ServiceNow incident API records. They are bulk-loaded by
@@ -81,9 +89,9 @@ def cef_escape(v):
 ZONE_BY_NAME = {"KPP-PLC-T2": "Level 1 Control Network", "KPP-RTU-SS1": "Level 1 Control Network",
                 "KPP-ENG-WS01": "Level 2 Process Network", "KPP-HMI-01": "Level 2 Process Network",
                 "KPP-HIST-01": "Level 2 Process Network", "FGT-KPP-OT01": "Level 3 Control DMZ",
-                "KPP-USB-KIOSK01": "Level 3 Control DMZ"}
+                "KPP-USB-KIOSK01": "Level 3 Control DMZ", "KPP-ENG-WS02": "Level 2 Process Network"}
 ATYPE_BY_NAME = {"KPP-PLC-T2": "PLC", "KPP-RTU-SS1": "RTU", "KPP-ENG-WS01": "Endpoint", "KPP-HMI-01": "HMI",
-                 "KPP-HIST-01": "Endpoint", "FGT-KPP-OT01": "Network Device", "KPP-USB-KIOSK01": "Endpoint"}
+                 "KPP-HIST-01": "Endpoint", "FGT-KPP-OT01": "Network Device", "KPP-USB-KIOSK01": "Endpoint", "KPP-ENG-WS02": "Endpoint"}
 SITE_ID = "KPP-SITE-01"
 CTD_SENSOR = "KPP-CTD-SENSOR01"
 # Approximate Claroty categories for our two alert signatures (category strings are a best guess).
@@ -204,6 +212,7 @@ ASSET_DEFS = [  # (id, name, ip, vendor, model, firmware, asset_type__, class_ty
     (105, "KPP-HIST-01", HIST, "Dell", "PowerEdge R450 (historian)", "Windows Server 2019", "eEndpoint", "IT", 55, "eMedium", False, "B0:7B:25:44:A1:40"),
     (106, "FGT-KPP-OT01", FGT, "Fortinet", "FortiGate 60F", "FortiOS 7.4.3", "eNetworkDevice", "IT", 28, "eHigh", False, "90:6C:AC:11:22:01"),
     (107, "KPP-USB-KIOSK01", "10.20.0.50", "Generic", "Meta Data Kiosk", "3.4", "eEndpoint", "IT", 22, "eMedium", False, "00:50:56:AB:CD:50"),
+    (109, "KPP-ENG-WS02", EWS2, "Dell", "Precision 5860 (TIA Portal V18)", "Windows 10 22H2", "eEndpoint", "IT", 35, "eHigh", False, "A4:BB:6D:10:03:22"),
     (108, GHOST_IP, GHOST_IP, None, None, None, "eEndpoint", "IT", 85, "eLow", True, "00:00:00:00:00:00"),
 ]
 ZONE_ID = {"Level 1 Control Network": 1, "Level 2 Process Network": 2, "Level 3 Control DMZ": 3, "Unclassified": 9}
@@ -277,7 +286,7 @@ def claroty_history(sink, now):
         claroty_insight(sink, now - random.randint(600, 86000))
 
 
-def fgt_line(ts, flow, action="accept", level="notice"):
+def fgt_line(ts, flow, action="accept", level="notice", user=None):
     pid, pname, src, dst, svc, dport, proto, sif, dif = flow
     t = utc(ts)
     sent, rcvd = random.randint(200, 20000), random.randint(200, 40000)
@@ -296,6 +305,8 @@ def fgt_line(ts, flow, action="accept", level="notice"):
         ("trandisp", '"noop"'), ("duration", random.randint(1, 300)),
         ("sentbyte", sent), ("rcvdbyte", rcvd), ("sentpkt", sent // 100 + 1), ("rcvdpkt", rcvd // 100 + 1),
     ]
+    if user:
+        kv.insert(18, ("user", '"%s"' % user))
     return "<189>" + " ".join("%s=%s" % kv_ for kv_ in kv)
 
 
@@ -522,7 +533,7 @@ def _api_ts(ts):
 def defender_alert_doc(ts, host, user, title, description, severity="Informational", status="Resolved",
                        classification="FalsePositive", determination="Other", investigation="Benign",
                        category="Discovery", assigned="Automated investigation", incident=448201, threat=None,
-                       source="WindowsDefenderAtp"):
+                       source="WindowsDefenderAtp", ip=None):
     """Raw Microsoft Defender for Endpoint alert as returned by the API (microsoft_defender_endpoint.log input)."""
     resolved = status == "Resolved"
     return json.dumps({
@@ -538,7 +549,8 @@ def defender_alert_doc(ts, host, user, title, description, severity="Information
         "machineId": hashlib.sha1(host.encode()).hexdigest(), "computerDnsName": host,
         "rbacGroupName": None, "aadTenantId": "7c1d0a3e-d66c-4c7e-9e30-40034eb7c6f3", "relatedUser": None,
         "comments": [],
-        "evidence": {"entityType": "User", "accountName": user, "domainName": "KPP"}})
+        "evidence": ({"entityType": "Ip", "ipAddress": ip, "accountName": user, "domainName": "KPP"} if ip else
+                     {"entityType": "User", "accountName": user, "domainName": "KPP"})})
 
 
 def servicenow_doc(ts, state_value, state_display, assigned_to=None, close_notes=None, number=INCIDENT_NO,
@@ -1034,6 +1046,34 @@ def run_api_data(a, sink):
     sink.servicenow(servicenow_doc(now - 25, 2, "In Progress", assigned_to="OT SOC analyst", opened_ts=now - 60), now - 25)
 
 
+def run_ews_compromise(a, sink):
+    """One-shot sequence for the "OT: VPN access, EWS compromise and PLC change" rule, sent through the agent (run on
+    the host by `run-scenario.sh ews-compromise`). Relative to the base time: VPN-pool RDP to KPP-ENG-WS02 (-6 min),
+    then Claroty PLC program downloads from it (-2 and -1 min). The Defender alert in between (-4 min) is bulk loaded
+    by the ews-defender mode. A separate workstation keeps the ENG-WS01 false-positive storyline and its noise alerts
+    from interfering with the rule's ordering check."""
+    t0 = a.base_time or time.time()
+    for i in range(3):
+        t = t0 - 360 + i * 20
+        sink.fgt(fgt_line(t, FLOW_VPN_EWS, user=VPN_USER))
+    sid, name, sev = THREAT_ALERTS[0]
+    for i in range(2):
+        sink.claroty(claroty_line(t0 - 120 + i * 60, sid, name, sev, EWS2, PLC))
+    print("ews-compromise done: VPN %s -> %s, Claroty program download from it" % (VPN_POOL_IP, EWS2), file=sys.stderr)
+
+
+def run_ews_defender(a, sink):
+    """The Defender alert in the EWS sequence (bulk line, parsed by the Defender integration's pipeline). The
+    pipeline maps evidence.ipAddress to related.ip, which the rule uses as the Defender side of the EWS IP join."""
+    t = (a.base_time or time.time()) - 240
+    sink.defender(defender_alert_doc(
+        t, "KPP-ENG-WS02", VPN_USER, "Suspicious PowerShell command line",
+        "PowerShell ran an encoded command on the engineering workstation shortly after a remote desktop logon, "
+        "followed by an engineering software launch from an unusual parent process.",
+        severity="High", status="New", classification=None, determination=None, investigation="Running",
+        category="Execution", assigned=None, incident=448299, source="WindowsDefenderAtp", ip=EWS2), t)
+
+
 def run_ticket_close(a, sink):
     """Analyst closed the case in Elastic: the ServiceNow incident is closed as a false positive (bulk line)."""
     t = time.time()
@@ -1063,7 +1103,7 @@ def run_threat(a, sink):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--mode", required=True, choices=["noise", "backfill", "scenario", "threat", "ticket-close", "api-data"])
+    p.add_argument("--mode", required=True, choices=["noise", "backfill", "scenario", "threat", "ticket-close", "api-data", "ews-compromise", "ews-defender"])
     p.add_argument("--hours", type=float, default=24, help="backfill window")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, dest="claroty_port", default=9100, help="Claroty CEF TCP port")
@@ -1081,16 +1121,17 @@ def main():
     p.add_argument("--scenario-events", type=int, default=1200, help="Claroty alerts in burst (min 1000)")
     p.add_argument("--scenario-seconds", type=float, default=60.0, help="burst duration")
     p.add_argument("--seed", type=int)
+    p.add_argument("--base-time", type=float, help="epoch seconds the ews-compromise sequence is anchored to (default now)")
     p.add_argument("--dry-run", action="store_true", help="print samples to stdout, send nothing")
     p.add_argument("--samples", type=int, default=3, help="dry-run samples per stream")
     a = p.parse_args()
     if a.seed is not None:
         random.seed(a.seed)
-    if a.mode in ("api-data", "ticket-close"):
+    if a.mode in ("api-data", "ticket-close", "ews-defender"):
         a.dry_run = True  # prints bulk lines only: no sockets and no files are opened
     sink = Sink(a)
     try:
-        {"noise": run_noise, "backfill": run_backfill, "scenario": run_scenario, "threat": run_threat, "ticket-close": run_ticket_close, "api-data": run_api_data}[a.mode](a, sink)
+        {"noise": run_noise, "backfill": run_backfill, "scenario": run_scenario, "threat": run_threat, "ticket-close": run_ticket_close, "api-data": run_api_data, "ews-compromise": run_ews_compromise, "ews-defender": run_ews_defender}[a.mode](a, sink)
     except KeyboardInterrupt:
         pass
     if a.dry_run:

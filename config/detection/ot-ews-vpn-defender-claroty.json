@@ -1,0 +1,83 @@
+{
+  "rule_id": "ot_ews_vpn_defender_claroty_plc_tamper",
+  "name": "OT: VPN access, EWS compromise and PLC change from same workstation",
+  "description": "Correlates FortiGate remote-access traffic from the VPN pool to an engineering workstation, a Microsoft Defender alert on that workstation, and a Claroty CTD PLC modification alert originating from it, in that order. Indicates possible use of stolen remote-access credentials to tamper with OT process control.",
+  "type": "esql",
+  "language": "esql",
+  "query": "FROM logs-fortinet_fortigate.log-*, logs-microsoft_defender_endpoint.log-*, logs-claroty_ctd.event-*\n| WHERE\n    (event.dataset == \"fortinet_fortigate.log\"\n      AND event.outcome == \"success\"\n      AND CIDR_MATCH(source.ip, \"10.99.0.0/24\")\n      AND destination.port IN (3389, 445, 5985))\n    OR (event.dataset == \"microsoft_defender_endpoint.log\"\n      AND event.kind == \"alert\")\n    OR (event.dataset == \"claroty_ctd.event\"\n      AND event.kind == \"alert\"\n      AND claroty_ctd.event.name IN (\"PLC Program Download Detected\", \"PLC Configuration Change\", \"Unauthorized Write\"))\n| EVAL ews_ip = CASE(\n    event.dataset == \"fortinet_fortigate.log\", destination.ip,\n    event.dataset == \"claroty_ctd.event\", source.ip,\n    related.ip)\n| MV_EXPAND ews_ip\n| WHERE ews_ip IS NOT NULL\n| STATS\n    vpn_hops       = COUNT(*)                     WHERE event.dataset == \"fortinet_fortigate.log\",\n    defender_hits  = COUNT(*)                     WHERE event.dataset == \"microsoft_defender_endpoint.log\",\n    claroty_hits   = COUNT(*)                     WHERE event.dataset == \"claroty_ctd.event\",\n    first_vpn      = MIN(@timestamp)              WHERE event.dataset == \"fortinet_fortigate.log\",\n    first_defender = MIN(@timestamp)              WHERE event.dataset == \"microsoft_defender_endpoint.log\",\n    first_claroty  = MIN(@timestamp)              WHERE event.dataset == \"claroty_ctd.event\",\n    vpn_users      = VALUES(source.user.name)     WHERE event.dataset == \"fortinet_fortigate.log\",\n    claroty_alerts = VALUES(claroty_ctd.event.name) WHERE event.dataset == \"claroty_ctd.event\"\n  BY ews_ip\n| WHERE vpn_hops > 0 AND defender_hits > 0 AND claroty_hits > 0\n    AND first_vpn <= first_defender AND first_defender <= first_claroty\n| EVAL minutes_vpn_to_plc = DATE_DIFF(\"minutes\", first_vpn, first_claroty)\n| KEEP ews_ip, first_vpn, first_defender, first_claroty, minutes_vpn_to_plc, vpn_users, vpn_hops, defender_hits, claroty_hits, claroty_alerts\n| SORT first_claroty DESC",
+  "enabled": true,
+  "interval": "15m",
+  "from": "now-255m",
+  "severity": "high",
+  "risk_score": 73,
+  "max_signals": 100,
+  "alert_suppression": {
+    "group_by": [
+      "ews_ip"
+    ],
+    "duration": {
+      "value": 4,
+      "unit": "h"
+    },
+    "missing_fields_strategy": "suppress"
+  },
+  "tags": [
+    "OT",
+    "ICS",
+    "Domain: OT",
+    "demo",
+    "Data Source: Fortinet FortiGate",
+    "Data Source: Microsoft Defender for Endpoint",
+    "Data Source: Claroty CTD",
+    "ICS ATT&CK: T836",
+    "ICS ATT&CK: T843"
+  ],
+  "references": [
+    "https://attack.mitre.org/techniques/ics/T0836/"
+  ],
+  "false_positives": [
+    "Authorised remote maintenance by vendors or engineers during approved change windows",
+    "Legitimate PLC programming following a Defender false positive on the EWS"
+  ],
+  "threat": [
+    {
+      "framework": "MITRE ATT&CK",
+      "tactic": {
+        "id": "TA0001",
+        "name": "Initial Access",
+        "reference": "https://attack.mitre.org/tactics/TA0001/"
+      },
+      "technique": [
+        {
+          "id": "T1078",
+          "name": "Valid Accounts",
+          "reference": "https://attack.mitre.org/techniques/T1078/"
+        }
+      ]
+    },
+    {
+      "framework": "MITRE ATT&CK",
+      "tactic": {
+        "id": "TA0008",
+        "name": "Lateral Movement",
+        "reference": "https://attack.mitre.org/tactics/TA0008/"
+      },
+      "technique": [
+        {
+          "id": "T1021",
+          "name": "Remote Services",
+          "reference": "https://attack.mitre.org/techniques/T1021/",
+          "subtechnique": [
+            {
+              "id": "T1021.001",
+              "name": "Remote Desktop Protocol",
+              "reference": "https://attack.mitre.org/techniques/T1021/001/"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "note": "Triage: identify the EWS (ews_ip), the VPN user(s), the Defender alert and the Claroty alert. Check change tickets for the EWS. If unapproved, isolate the EWS and the VPN account, and inform the OT/plant operations owner before any action that could affect the process.\n\nMITRE ATT&CK for ICS: T0836 Modify Parameter and T0843 Program Download are carried as tags and references, because the Kibana rule threat mapping covers Enterprise ATT&CK only. T0810 Data Historian Compromise is an adjacent technique.",
+  "actions": []
+}

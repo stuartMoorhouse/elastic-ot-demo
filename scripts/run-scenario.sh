@@ -4,6 +4,7 @@
 #   run-scenario.sh backfill [HOURS]     (default 24)
 #   run-scenario.sh scenario             (Karins false-positive storyline)
 #   run-scenario.sh threat               (contrast: unmanaged source, not in inventory)
+#   run-scenario.sh ews-compromise       (one-shot VPN -> Defender -> Claroty PLC change on KPP-ENG-WS02, for the EWS rule)
 #   run-scenario.sh ticket-close         (close the sample ServiceNow incident, after the case is closed)
 #   run-scenario.sh status
 # SSH details come from terraform outputs (ssh_command, or ec2_public_ip + infra/*.pem).
@@ -15,7 +16,7 @@ need jq
 
 GEN=/opt/ot-demo/ot_generator.py
 UNIT=ot-generator.service
-usage() { sed -n '2,8p' "${BASH_SOURCE[0]}" >&2; exit 2; }
+usage() { sed -n '2,9p' "${BASH_SOURCE[0]}" >&2; exit 2; }
 
 ssh_cmd_array() {
   local cmd="${OT_SSH_CMD:-$(env_get ssh_command)}"
@@ -63,6 +64,13 @@ case "$action" in
     log "triggering contrast (threat) scenario at $(date -u +%FT%TZ)"
     remote "sudo python3 $GEN --mode threat"
     log "threat scenario sent"
+    ;;
+  ews-compromise)
+    base="$(now_epoch)"
+    # timeout: the generator retries the Claroty TCP connect forever, which would hang if the agent is not listening yet
+    remote "sudo timeout 120 python3 $GEN --mode ews-compromise --base-time $base"
+    "$LIB_DIR/load-api-data.sh" ews-defender "$base"
+    log "EWS compromise sequence sent (VPN -> Defender -> Claroty on KPP-ENG-WS02)"
     ;;
   ticket-close)
     "$LIB_DIR/load-api-data.sh" ticket-close
