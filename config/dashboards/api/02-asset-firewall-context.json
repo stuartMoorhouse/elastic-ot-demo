@@ -1,0 +1,219 @@
+{
+  "title": "Asset and Firewall Context",
+  "description": "Selected asset (default KPP-PLC-T2, 10.20.4.12): metadata, FortiGate rules hit, network and endpoint events",
+  "panels": [
+    {
+      "type": "vis",
+      "id": "t-meta",
+      "grid": {
+        "x": 0,
+        "y": 0,
+        "w": 48,
+        "h": 7
+      },
+      "config": {
+        "title": "Asset metadata (ot-assets)",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM ot-assets | WHERE asset.ip == TO_IP(\"10.20.4.12\") OR asset.ip == TO_IP(\"10.20.3.21\") | KEEP asset.name, asset.ip, asset.role, site.name, network.zone, asset.criticality, asset.owner, asset.known_good, asset.maintenance_window"
+        },
+        "metrics": [],
+        "rows": [
+          {
+            "column": "asset.name"
+          },
+          {
+            "column": "asset.ip"
+          },
+          {
+            "column": "asset.role"
+          },
+          {
+            "column": "site.name"
+          },
+          {
+            "column": "network.zone"
+          },
+          {
+            "column": "asset.criticality"
+          },
+          {
+            "column": "asset.owner"
+          },
+          {
+            "column": "asset.known_good"
+          },
+          {
+            "column": "asset.maintenance_window"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "t-alerts",
+      "grid": {
+        "x": 0,
+        "y": 7,
+        "w": 48,
+        "h": 8
+      },
+      "config": {
+        "title": "Claroty alerts against the asset, enriched with LOOKUP JOIN",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-claroty_ctd.event-* | WHERE event.kind == \"alert\" | WHERE destination.ip == TO_IP(\"10.20.4.12\") | EVAL asset.ip = destination.ip | LOOKUP JOIN ot-assets ON asset.ip | STATS alerts = COUNT(*), last_seen = MAX(@timestamp) BY claroty_ctd.event.name, asset.name, asset.owner, network.zone, asset.known_good | SORT alerts DESC"
+        },
+        "metrics": [
+          {
+            "column": "alerts"
+          }
+        ],
+        "rows": [
+          {
+            "column": "claroty_ctd.event.name"
+          },
+          {
+            "column": "asset.name"
+          },
+          {
+            "column": "asset.owner"
+          },
+          {
+            "column": "network.zone"
+          },
+          {
+            "column": "asset.known_good"
+          },
+          {
+            "column": "last_seen"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "t-rules",
+      "grid": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 10
+      },
+      "config": {
+        "title": "FortiGate rules hit for the asset",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-fortinet_fortigate.log-* | WHERE destination.ip == TO_IP(\"10.20.4.12\") OR source.ip == TO_IP(\"10.20.4.12\") | STATS hits = COUNT(*), last_hit = MAX(@timestamp) BY rule.name, rule.id, event.outcome | SORT hits DESC"
+        },
+        "metrics": [
+          {
+            "column": "hits"
+          }
+        ],
+        "rows": [
+          {
+            "column": "rule.name"
+          },
+          {
+            "column": "rule.id"
+          },
+          {
+            "column": "event.outcome"
+          },
+          {
+            "column": "last_hit"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "t-net",
+      "grid": {
+        "x": 24,
+        "y": 15,
+        "w": 24,
+        "h": 10
+      },
+      "config": {
+        "title": "Recent network events",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-fortinet_fortigate.log-* | WHERE destination.ip == TO_IP(\"10.20.4.12\") OR source.ip == TO_IP(\"10.20.4.12\") | SORT @timestamp DESC | LIMIT 20 | KEEP @timestamp, source.ip, destination.ip, destination.port, network.transport, rule.name, event.outcome"
+        },
+        "metrics": [],
+        "rows": [
+          {
+            "column": "@timestamp"
+          },
+          {
+            "column": "source.ip"
+          },
+          {
+            "column": "destination.ip"
+          },
+          {
+            "column": "destination.port"
+          },
+          {
+            "column": "network.transport"
+          },
+          {
+            "column": "rule.name"
+          },
+          {
+            "column": "event.outcome"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "t-ep",
+      "grid": {
+        "x": 0,
+        "y": 25,
+        "w": 48,
+        "h": 10
+      },
+      "config": {
+        "title": "Related endpoint events (KPP-ENG-WS01)",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-ot_endpoint.events-* | WHERE host.name == \"KPP-ENG-WS01\" | SORT @timestamp DESC | LIMIT 20 | KEEP @timestamp, host.name, event.category, event.action, user.name, process.name"
+        },
+        "metrics": [],
+        "rows": [
+          {
+            "column": "@timestamp"
+          },
+          {
+            "column": "host.name"
+          },
+          {
+            "column": "event.category"
+          },
+          {
+            "column": "event.action"
+          },
+          {
+            "column": "user.name"
+          },
+          {
+            "column": "process.name"
+          }
+        ]
+      }
+    }
+  ],
+  "time_range": {
+    "from": "now-24h",
+    "to": "now"
+  }
+}

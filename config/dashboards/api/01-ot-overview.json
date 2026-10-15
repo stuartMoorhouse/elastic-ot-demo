@@ -1,0 +1,222 @@
+{
+  "title": "OT Overview",
+  "description": "Current OT status: alert counts, top assets, zones",
+  "panels": [
+    {
+      "type": "vis",
+      "id": "m-claroty",
+      "grid": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-claroty_ctd.event-* | WHERE event.kind == \"alert\" | STATS `Claroty alerts` = COUNT(*)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Claroty alerts"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "m-fgt",
+      "grid": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-fortinet_fortigate.log-* | STATS `FortiGate events` = COUNT(*)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "FortiGate events"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "m-ep",
+      "grid": {
+        "x": 24,
+        "y": 0,
+        "w": 12,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-ot_endpoint.events-* | STATS `Endpoint events` = COUNT(*)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Endpoint events"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "m-assets",
+      "grid": {
+        "x": 36,
+        "y": 0,
+        "w": 12,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-claroty_ctd.event-* | WHERE event.kind == \"alert\" | EVAL asset.ip = destination.ip | LOOKUP JOIN ot-assets ON asset.ip | STATS `Assets with alerts` = COUNT_DISTINCT(asset.name)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Assets with alerts"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "x-alerts",
+      "grid": {
+        "x": 0,
+        "y": 5,
+        "w": 48,
+        "h": 9
+      },
+      "config": {
+        "title": "Claroty alerts over time",
+        "type": "xy",
+        "axis": {
+          "x": {
+            "title": {
+              "visible": false
+            },
+            "scale": "temporal",
+            "domain": {
+              "type": "fit",
+              "rounding": false
+            }
+          },
+          "y": {
+            "anchor": "start",
+            "title": {
+              "visible": false
+            }
+          }
+        },
+        "layers": [
+          {
+            "type": "bar",
+            "data_source": {
+              "type": "esql",
+              "query": "FROM logs-claroty_ctd.event-* | WHERE event.kind == \"alert\" | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS alerts = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend)"
+            },
+            "x": {
+              "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
+              "label": "@timestamp"
+            },
+            "y": [
+              {
+                "column": "alerts"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "t-assets",
+      "grid": {
+        "x": 0,
+        "y": 14,
+        "w": 30,
+        "h": 11
+      },
+      "config": {
+        "title": "Top assets by Claroty alerts (asset metadata via LOOKUP JOIN)",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-claroty_ctd.event-* | WHERE event.kind == \"alert\" | EVAL asset.ip = destination.ip | LOOKUP JOIN ot-assets ON asset.ip | STATS alerts = COUNT(*) BY asset.name, site.name, network.zone, asset.criticality | SORT alerts DESC | LIMIT 10"
+        },
+        "metrics": [
+          {
+            "column": "alerts"
+          }
+        ],
+        "rows": [
+          {
+            "column": "asset.name"
+          },
+          {
+            "column": "site.name"
+          },
+          {
+            "column": "network.zone"
+          },
+          {
+            "column": "asset.criticality"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "p-zone",
+      "grid": {
+        "x": 30,
+        "y": 14,
+        "w": 18,
+        "h": 11
+      },
+      "config": {
+        "title": "Alerts by network zone",
+        "type": "pie",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-claroty_ctd.event-* | WHERE event.kind == \"alert\" | EVAL asset.ip = destination.ip | LOOKUP JOIN ot-assets ON asset.ip | STATS alerts = COUNT(*) BY network.zone"
+        },
+        "metrics": [
+          {
+            "column": "alerts"
+          }
+        ],
+        "group_by": [
+          {
+            "column": "network.zone"
+          }
+        ],
+        "donut_hole": "m"
+      }
+    }
+  ],
+  "time_range": {
+    "from": "now-24h",
+    "to": "now"
+  }
+}

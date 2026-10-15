@@ -1,0 +1,27 @@
+{
+  "name": "claroty-ctd-ot-demo",
+  "description": "Claroty CTD CEF syslog over TCP on localhost:9100 (event data stream; alerts arrive here with event.kind=alert)",
+  "namespace": "default",
+  "policy_ids": ["__POLICY_ID__"],
+  "package": {
+    "name": "claroty_ctd",
+    "version": "__PACKAGE_VERSION__"
+  },
+  "inputs": {
+    "claroty_ctd-tcp": {
+      "enabled": true,
+      "streams": {
+        "claroty_ctd.event": {
+          "enabled": true,
+          "vars": {
+            "listen_address": "127.0.0.1",
+            "listen_port": 9100,
+            "preserve_original_event": false
+          }
+        }
+      }
+    },
+    "claroty_ctd-udp": { "enabled": false },
+    "claroty_ctd-cel": { "enabled": false }
+  }
+}

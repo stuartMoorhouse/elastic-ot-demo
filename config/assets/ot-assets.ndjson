@@ -1,0 +1,12 @@
+{"index": {"_id": "KPP-PLC-T2"}}
+{"asset": {"name": "KPP-PLC-T2", "ip": "10.20.4.12", "role": "Siemens S7-1500 PLC, Turbine 2 governor control", "vendor": "Siemens", "model": "SIMATIC S7-1500 CPU 1516-3 PN/DP", "criticality": "Critical", "owner": "Turbine Controls", "known_good": true, "maintenance_window": "Mon 08:00-10:00 Europe/Helsinki (engineering changes permitted)"}, "site": {"name": "Karins Power Plant"}, "network": {"zone": "Level 1 Control"}}
+{"index": {"_id": "KPP-RTU-SS1"}}
+{"asset": {"name": "KPP-RTU-SS1", "ip": "10.20.4.30", "role": "RTU, substation 1 breaker telemetry (DNP3)", "vendor": "ABB", "model": "RTU560", "criticality": "Critical", "owner": "Substation Automation", "known_good": true, "maintenance_window": "Sun 02:00-04:00 Europe/Helsinki"}, "site": {"name": "Karins Power Plant"}, "network": {"zone": "Level 1 Control"}}
+{"index": {"_id": "KPP-ENG-WS01"}}
+{"asset": {"name": "KPP-ENG-WS01", "ip": "10.20.3.21", "role": "Engineering workstation (TIA Portal)", "vendor": "Dell", "model": "Precision 5860 Tower", "criticality": "High", "owner": "Control Systems Eng.", "known_good": true, "maintenance_window": "Mon 08:00-10:00 Europe/Helsinki (scheduled PLC maintenance)"}, "site": {"name": "Karins Power Plant"}, "network": {"zone": "Level 2 Supervisory"}}
+{"index": {"_id": "KPP-HMI-01"}}
+{"asset": {"name": "KPP-HMI-01", "ip": "10.20.3.10", "role": "Control room HMI", "vendor": "Siemens", "model": "SIMATIC IPC477E / WinCC", "criticality": "High", "owner": "Plant Operations", "known_good": true, "maintenance_window": "none"}, "site": {"name": "Karins Power Plant"}, "network": {"zone": "Level 2 Supervisory"}}
+{"index": {"_id": "KPP-HIST-01"}}
+{"asset": {"name": "KPP-HIST-01", "ip": "10.20.3.40", "role": "Process historian", "vendor": "HPE", "model": "ProLiant DL360 Gen11 / OSIsoft PI", "criticality": "Medium", "owner": "Plant IT / OT Data", "known_good": true, "maintenance_window": "Sat 01:00-03:00 Europe/Helsinki"}, "site": {"name": "Karins Power Plant"}, "network": {"zone": "Level 3 Operations"}}
+{"index": {"_id": "FGT-KPP-OT01"}}
+{"asset": {"name": "FGT-KPP-OT01", "ip": "10.20.0.1", "role": "FortiGate OT segmentation firewall", "vendor": "Fortinet", "model": "FortiGate 100F", "criticality": "High", "owner": "OT Network Security", "known_good": true, "maintenance_window": "Thu 22:00-23:00 Europe/Helsinki"}, "site": {"name": "Karins Power Plant"}, "network": {"zone": "Level 3.5 DMZ"}}

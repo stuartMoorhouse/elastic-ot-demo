@@ -1,0 +1,34 @@
+{
+  "name": "ot-endpoint-logs-ot-demo",
+  "description": "Synthetic ECS endpoint events (NDJSON) tailed from /var/log/ot-demo/endpoint.ndjson",
+  "namespace": "default",
+  "policy_ids": [
+    "__POLICY_ID__"
+  ],
+  "package": {
+    "name": "filestream",
+    "version": "__PACKAGE_VERSION__"
+  },
+  "inputs": {
+    "filestream-filestream": {
+      "enabled": true,
+      "streams": {
+        "filestream.filestream": {
+          "enabled": true,
+          "vars": {
+            "paths": [
+              "/var/log/ot-demo/endpoint.ndjson"
+            ],
+            "data_stream.dataset": "ot_endpoint.events",
+            "use_logs_stream": false,
+            "parsers": "- ndjson:\n    target: \"\"\n    overwrite_keys: true\n    add_error_key: true\n",
+            "tags": [
+              "ot-demo",
+              "ot-endpoint"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

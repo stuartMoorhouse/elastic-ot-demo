@@ -1,0 +1,27 @@
+{
+  "name": "fortinet-fortigate-ot-demo",
+  "description": "FortiGate key=value syslog over UDP on localhost:9004",
+  "namespace": "default",
+  "policy_ids": ["__POLICY_ID__"],
+  "package": {
+    "name": "fortinet_fortigate",
+    "version": "__PACKAGE_VERSION__"
+  },
+  "inputs": {
+    "fortinet_fortigate-udp": {
+      "enabled": true,
+      "streams": {
+        "fortinet_fortigate.log": {
+          "enabled": true,
+          "vars": {
+            "syslog_host": "127.0.0.1",
+            "syslog_port": 9004,
+            "preserve_original_event": false
+          }
+        }
+      }
+    },
+    "fortinet_fortigate-tcp": { "enabled": false },
+    "fortinet_fortigate-logfile": { "enabled": false }
+  }
+}

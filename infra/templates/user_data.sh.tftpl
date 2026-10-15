@@ -1,0 +1,51 @@
+#!/bin/bash -xe
+exec > >(tee -a /var/log/user-data.log) 2>&1
+
+# Local ports contract (host-local only; NOT opened in the security group).
+# These are configured on the Fleet integration policies by scripts/configure.sh
+# and targeted by the generator (scripts/generator/ot_generator.py):
+#   Claroty CTD CEF syslog   TCP 127.0.0.1:9100
+#   FortiGate syslog         UDP 127.0.0.1:9004
+#   Endpoint events NDJSON   /var/log/ot-demo/endpoint.ndjson
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y python3 curl tar
+
+# Working directories. /opt/ot-demo is owned by ubuntu so Terraform can push
+# the generator over SSH; /var/log/ot-demo is written by the generator (ubuntu)
+# and read by Elastic Agent (root).
+install -d -o ubuntu -g ubuntu -m 0755 /opt/ot-demo
+install -d -o ubuntu -g ubuntu -m 0755 /var/log/ot-demo
+touch /var/log/ot-demo/endpoint.ndjson
+chown ubuntu:ubuntu /var/log/ot-demo/endpoint.ndjson
+
+# Generator service: disabled by default; scripts start/stop it.
+cat > /etc/systemd/system/ot-generator.service <<'UNIT'
+[Unit]
+Description=OT demo synthetic event generator
+After=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+ExecStart=/usr/bin/python3 /opt/ot-demo/ot_generator.py --mode noise
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl disable ot-generator.service || true
+
+# Elastic Agent, version matched to the stack, enrolled in Fleet.
+cd /tmp
+AGENT="elastic-agent-${stack_version}-linux-${agent_arch}"
+curl -fsSL -o "$AGENT.tar.gz" "https://artifacts.elastic.co/downloads/beats/elastic-agent/$AGENT.tar.gz"
+tar xzf "$AGENT.tar.gz"
+cd "$AGENT"
+./elastic-agent install --non-interactive \
+  --url="${fleet_url}" \
+  --enrollment-token="${enrollment_token}"
+
+echo "user-data complete"

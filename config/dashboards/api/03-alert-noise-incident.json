@@ -1,0 +1,200 @@
+{
+  "title": "Alert Noise vs Incident Summary",
+  "description": "Raw Claroty alert events versus grouped (suppressed) detection alerts",
+  "panels": [
+    {
+      "type": "vis",
+      "id": "m-raw",
+      "grid": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-claroty_ctd.event-* | WHERE event.kind == \"alert\" | STATS `Raw Claroty alert events` = COUNT(*)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Raw Claroty alert events"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "m-grp",
+      "grid": {
+        "x": 16,
+        "y": 0,
+        "w": 16,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM .alerts-security.alerts-default | WHERE kibana.alert.rule.name == \"OT - Claroty CTD alert (suppressed by asset and signature)\" | STATS `Grouped alerts` = COUNT(*)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Grouped alerts"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "m-sup",
+      "grid": {
+        "x": 32,
+        "y": 0,
+        "w": 16,
+        "h": 5
+      },
+      "config": {
+        "title": "",
+        "type": "metric",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM .alerts-security.alerts-default | WHERE kibana.alert.rule.name == \"OT - Claroty CTD alert (suppressed by asset and signature)\" | STATS `Duplicates suppressed` = SUM(kibana.alert.suppression.docs_count)"
+        },
+        "metrics": [
+          {
+            "type": "primary",
+            "column": "Duplicates suppressed"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "x-raw",
+      "grid": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 9
+      },
+      "config": {
+        "title": "Raw Claroty alert events over time",
+        "type": "xy",
+        "axis": {
+          "x": {
+            "title": {
+              "visible": false
+            },
+            "scale": "temporal",
+            "domain": {
+              "type": "fit",
+              "rounding": false
+            }
+          },
+          "y": {
+            "anchor": "start",
+            "title": {
+              "visible": false
+            }
+          }
+        },
+        "layers": [
+          {
+            "type": "bar",
+            "data_source": {
+              "type": "esql",
+              "query": "FROM logs-claroty_ctd.event-* | WHERE event.kind == \"alert\" | WHERE @timestamp <= ?_tend AND @timestamp > ?_tstart | STATS raw_events = COUNT(*) BY BUCKET(@timestamp, 75, ?_tstart, ?_tend)"
+            },
+            "x": {
+              "column": "BUCKET(@timestamp, 75, ?_tstart, ?_tend)",
+              "label": "@timestamp"
+            },
+            "y": [
+              {
+                "column": "raw_events"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "t-sig",
+      "grid": {
+        "x": 24,
+        "y": 5,
+        "w": 24,
+        "h": 9
+      },
+      "config": {
+        "title": "Raw events by alert name and destination asset",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM logs-claroty_ctd.event-* | WHERE event.kind == \"alert\" | EVAL asset.ip = destination.ip | LOOKUP JOIN ot-assets ON asset.ip | STATS raw_events = COUNT(*) BY claroty_ctd.event.name, asset.name | SORT raw_events DESC | LIMIT 10"
+        },
+        "metrics": [
+          {
+            "column": "raw_events"
+          }
+        ],
+        "rows": [
+          {
+            "column": "claroty_ctd.event.name"
+          },
+          {
+            "column": "asset.name"
+          }
+        ]
+      }
+    },
+    {
+      "type": "vis",
+      "id": "t-grp",
+      "grid": {
+        "x": 0,
+        "y": 14,
+        "w": 48,
+        "h": 10
+      },
+      "config": {
+        "title": "Grouped alerts (one row per asset and signature)",
+        "type": "data_table",
+        "data_source": {
+          "type": "esql",
+          "query": "FROM .alerts-security.alerts-default | WHERE kibana.alert.rule.name == \"OT - Claroty CTD alert (suppressed by asset and signature)\" | SORT @timestamp DESC | LIMIT 20 | KEEP @timestamp, kibana.alert.suppression.terms.value, kibana.alert.suppression.docs_count, kibana.alert.severity, kibana.alert.workflow_status"
+        },
+        "metrics": [
+          {
+            "column": "kibana.alert.suppression.docs_count"
+          }
+        ],
+        "rows": [
+          {
+            "column": "@timestamp"
+          },
+          {
+            "column": "kibana.alert.suppression.terms.value"
+          },
+          {
+            "column": "kibana.alert.severity"
+          },
+          {
+            "column": "kibana.alert.workflow_status"
+          }
+        ]
+      }
+    }
+  ],
+  "time_range": {
+    "from": "now-24h",
+    "to": "now"
+  }
+}
