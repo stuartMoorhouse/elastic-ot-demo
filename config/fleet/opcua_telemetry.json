@@ -1,0 +1,35 @@
+{
+  "name": "opcua-telemetry-ot-demo",
+  "description": "SAMPLE substation values in the shape of an OPC UA client collector (NDJSON), tailed from /var/log/ot-demo/opcua.ndjson. No dedicated Elastic integration.",
+  "namespace": "default",
+  "policy_ids": [
+    "__POLICY_ID__"
+  ],
+  "package": {
+    "name": "filestream",
+    "version": "__PACKAGE_VERSION__"
+  },
+  "inputs": {
+    "filestream-filestream": {
+      "enabled": true,
+      "streams": {
+        "filestream.filestream": {
+          "enabled": true,
+          "vars": {
+            "paths": [
+              "/var/log/ot-demo/opcua.ndjson"
+            ],
+            "data_stream.dataset": "opcua.telemetry",
+            "use_logs_stream": false,
+            "parsers": "- ndjson:\n    target: \"\"\n    overwrite_keys: true\n    add_error_key: true\n",
+            "tags": [
+              "ot-demo",
+              "opcua",
+              "sample-data"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

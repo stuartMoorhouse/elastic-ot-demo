@@ -1,0 +1,60 @@
+{
+  "timestamp": "20261015T140854Z",
+  "results": [
+    {
+      "criterion": 1,
+      "name": "Fleet agent healthy",
+      "status": "PASS",
+      "detail": "2 of 2 agents online"
+    },
+    {
+      "criterion": 2,
+      "name": "Data streams fresh and parsed",
+      "status": "PASS",
+      "detail": "logs-claroty_ctd.event-default docs=1224 errors=0; logs-fortinet_fortigate.log-default docs=477 errors=0; logs-ot_endpoint.events-default docs=194 errors=0; logs-usb_laundry.events-default docs=9 errors=0; "
+    },
+    {
+      "criterion": 3,
+      "name": "Unified OT dashboard",
+      "status": "PASS",
+      "detail": "dashboards=[OT Overview, Asset and Firewall Context, Alert Noise vs Incident Summary]; PLC firewall docs=378 (ENG-to-PLC-S7 hits=282), endpoint docs=47"
+    },
+    {
+      "criterion": 4,
+      "name": "Asset lookup (LOOKUP JOIN)",
+      "status": "PASS",
+      "detail": "{\"asset.ip\":\"10.20.4.12\",\"asset.owner\":\"Turbine Controls\",\"network.zone\":\"Level 1 Control Network\",\"asset.criticality\":\"Critical\",\"asset.known_good\":true}"
+    },
+    {
+      "criterion": 5,
+      "name": "Alert suppression",
+      "status": "FAIL",
+      "detail": "raw Claroty events (last 60m)=1224, alerts=0, suppressed docs_count sum=0.0 (need raw>=1000 and 1<=alerts<=5)"
+    },
+    {
+      "criterion": 6,
+      "name": "Case from alert, closed FP",
+      "status": "FAIL",
+      "detail": "no alert found for rule 'OT - Claroty CTD alert (suppressed by asset and signature)'"
+    },
+    {
+      "criterion": 7,
+      "name": "Dashboards <= 4",
+      "status": "PASS",
+      "detail": "3 demo dashboards (managed integration dashboards excluded)"
+    },
+    {
+      "criterion": 9,
+      "name": "Contrast: unmanaged source breaks out",
+      "status": "FAIL",
+      "detail": "alerts from 10.20.9.77=0 (need >=1), inventory records=0 (need 0); run: ./scripts/run-scenario.sh threat and wait for the rule"
+    },
+    {
+      "criterion": 10,
+      "name": "USB laundry provenance",
+      "status": "PASS",
+      "detail": "1 clean file release(s) to KPP-ENG-WS01 in logs-usb_laundry.events-default"
+    }
+  ],
+  "criterion_8": "manual: run terraform -chdir=infra destroy and confirm GuardDuty VPC cleanup"
+}

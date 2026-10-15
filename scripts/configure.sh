@@ -4,7 +4,7 @@
 #   2. create ot-assets index (skip if present) and load assets
 #   3. create Fleet package policies (only if absent) for "ot-demo-policy"
 #   4. import dashboards (overwrite=true)
-#   5. create or update the detection rule and validate it
+#   5. create (or delete and recreate) the detection rule and validate it
 #   6. set config_ready=true in shared/env.json
 set -euo pipefail
 # shellcheck source=lib.sh
@@ -89,9 +89,13 @@ else
   printf '%s' "$HTTP_BODY" | jq -e --arg n "$rule_name" '.data[] | select(.name==$n)' >/dev/null 2>&1 && found=1
 fi
 if [[ $found -eq 1 && -n $rule_id ]]; then
-  kb PUT /api/detection_engine/rules --data-binary "@$RULE"
-  require_2xx "update detection rule"
-  log "updated detection rule '$rule_name'"
+  # Recreate rather than PUT: an in-place update left the rule stuck on "Unable to find matching indices"
+  # (searches=0) in this environment, while a freshly created rule runs normally.
+  kb DELETE "/api/detection_engine/rules?rule_id=$rule_id"
+  require_2xx "delete detection rule for recreation"
+  kb POST /api/detection_engine/rules --data-binary "@$RULE"
+  require_2xx "recreate detection rule"
+  log "recreated detection rule '$rule_name'"
 elif [[ $found -eq 1 ]]; then
   log "detection rule '$rule_name' exists (no rule_id to update by), skipping"
 else

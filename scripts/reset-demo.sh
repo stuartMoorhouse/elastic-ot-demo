@@ -3,7 +3,7 @@
 #   reset-demo.sh [--keep-data] [--rerun]
 # - deletes cases tagged "ot-demo" (falls back to nothing destructive beyond that tag)
 # - deletes the demo detection-rule alerts (falls back to closing them)
-# - deletes the three demo data streams (skip with --keep-data); they are recreated on next write
+# - deletes all documents in the eight demo data streams, keeping the streams (skip with --keep-data)
 # - sets demo_executed=false; with --rerun triggers the scenario again afterwards
 set -euo pipefail
 # shellcheck source=lib.sh
@@ -20,7 +20,7 @@ for a in "$@"; do
 done
 
 RULE="$CONFIG_DIR/detection/claroty-suppressed-alert.json"
-STREAMS=(logs-claroty_ctd.event-default logs-fortinet_fortigate.log-default logs-ot_endpoint.events-default)
+STREAMS=(logs-claroty_ctd.event-default logs-fortinet_fortigate.log-default logs-ot_endpoint.events-default logs-usb_laundry.events-default logs-microsoft_defender_endpoint.log-default logs-servicenow.event-default logs-plc4x.telemetry-default logs-opcua.telemetry-default)
 ALERTS_INDEX=".alerts-security.alerts-default"
 
 load_env
@@ -54,9 +54,10 @@ fi
 # ---- data ----------------------------------------------------------------
 if [[ $KEEP_DATA -eq 0 ]]; then
   for s in "${STREAMS[@]}"; do
-    # Drop the data stream (instant); the integration index template recreates it on the next write.
-    if es DELETE "/_data_stream/$s" && is_2xx; then
-      log "$s: data stream deleted"
+    # Delete documents, not the data stream: a rule that runs while its stream is missing gets stuck on
+    # "no matching indices". No refresh=true: that needs indices:admin/refresh, which the scoped key lacks.
+    if es POST "/$s/_delete_by_query?conflicts=proceed" -d '{"query":{"match_all":{}}}' && is_2xx; then
+      log "$s: deleted $(printf '%s' "$HTTP_BODY" | jq -r '.deleted') doc(s)"
     elif [[ $HTTP_CODE == 404 ]]; then
       log "$s: not present, skipping"
     else

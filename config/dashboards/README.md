@@ -15,3 +15,5 @@ Exactly 3 dashboards exist in either path (limit is 4). Use one path only, not b
 - Dashboard 2 endpoint panel assumes the generator emits `host.name`, `event.category`, `event.action`, `user.name`, `process.name`. ES|QL fails with "Unknown column" if a field has never been indexed. FortiGate rule panels need `policyname` in the syslog lines so `rule.name` is populated.
 - Dashboard 3 reads `.alerts-security.alerts-default` (hidden index) and the rule name `OT - Claroty CTD alert (suppressed by asset and signature)`; they show data only after the detection rule has produced alerts.
 - The panels reference the Claroty data view in the Lens `textBased` state for all panels; ES|QL ignores it for the query, but verify in the UI.
+
+Note: `api/*.json` is a fallback in the Dashboards API format. It was updated for the Purdue rename only and is not kept in sync with later panel additions (raw-event drill-down, source known-good check, USB laundry trail). Use `ot-dashboards.ndjson`.

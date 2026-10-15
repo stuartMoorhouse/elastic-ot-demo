@@ -9,8 +9,12 @@ Key points the demo makes:
 
 - A handful of core dashboards, built visually, with no KQL needed to operate them.
 - Elastic as the context hub: Claroty raises the alert, Elastic supplies firewall, endpoint and asset context.
-- Repeated identical alerts are grouped into one contextualised incident (alert suppression), keeping
-  the analyst in the loop (NIS2 human-in-the-loop) without clicking through thousands of duplicates.
+- Repeated identical alerts are grouped by source, destination and signature into one contextualised incident (alert
+  suppression), without discarding any raw event, so the analyst stays in the loop without clicking through thousands
+  of duplicates. A contrast scenario shows an unknown source breaking out as its own alert.
+- Claroty, FortiGate, endpoint and USB laundry data are correlated in one place with asset metadata, alongside sample
+  Microsoft Defender for Endpoint and ServiceNow data that shows how Elastic sits next to those tools, and sample PLC
+  telemetry (PLC4X S7 and OPC UA shapes) that shows the process impact of a parameter change.
 
 All data is synthetic. Claroty CEF and FortiGate field fidelity is approximate.
 
@@ -18,8 +22,8 @@ All data is synthetic. Claroty CEF and FortiGate field fidelity is approximate.
 
 - Elastic Cloud 9.5 deployment (Elasticsearch, Kibana, Fleet), created with Terraform.
 - One AWS spot EC2 instance running a Fleet-managed Elastic Agent with the Claroty CTD, Fortinet FortiGate
-  and filestream (endpoint) integrations.
-- A synthetic generator on the instance emits Claroty CEF, FortiGate syslog and ECS endpoint events.
+  and filestream (endpoint and USB laundry) integrations.
+- A synthetic generator on the instance emits Claroty CEF, FortiGate syslog, ECS endpoint events, USB laundry kiosk events, sample Defender and ServiceNow events, and sample PLC4X and OPC UA telemetry.
 - `ot-assets` lookup index holds asset metadata (owner, zone, criticality, known-good flag), joined at query time.
 - One detection rule with alert suppression, one case, and three dashboards delivered as code.
 

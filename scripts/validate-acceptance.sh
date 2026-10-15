@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Check acceptance criteria 1-7 via API and write results/acceptance-<timestamp>.json.
+# Check acceptance criteria 1-7 and 9-12 via API and write results/acceptance-<timestamp>.json.
 #   1 Fleet agent healthy (online)
 #   2 docs in last 5 min per data stream, event.dataset set, no error.message
 #   3 unified dashboard exists and data for the PLC (FortiGate rule hits, network events) is present
@@ -7,6 +7,12 @@
 #   5 suppression: <=5 alerts for >=1000 raw Claroty events
 #   6 case created from the alert and closed (false positive) via API within 180s
 #   7 <=4 demo (non-managed) dashboards
+#  10 USB laundry provenance: a clean scan and release of a file to KPP-ENG-WS01 exists (run the scenario first)
+#  11 sample Defender alert for KPP-ENG-WS01 and ServiceNow incident updates exist (run the scenario first)
+#  12 PLC telemetry (PLC4X S7 and OPC UA, sample data) is flowing; after `run-scenario.sh threat` the turbine speed
+#     shows the setpoint excursion (>= 3100 rpm) that the unmanaged source caused
+#   9 contrast: after `run-scenario.sh threat`, alerts from the unmanaged source (not in ot-assets) break out
+#     as their own alert(s) instead of folding into the known-good group
 #   8 terraform destroy: MANUAL (run `terraform -chdir=infra destroy` and confirm the GuardDuty
 #     VPC cleanup provisioner completes); not checked here.
 # Criterion 6 consumes the current grouped alert by creating a case; run reset-demo.sh afterwards.
@@ -18,7 +24,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 PLC_IP="${PLC_IP:-10.20.4.12}"
 WINDOW="${WINDOW:-60m}"
 RULE="$CONFIG_DIR/detection/claroty-suppressed-alert.json"
-STREAMS=(logs-claroty_ctd.event-default logs-fortinet_fortigate.log-default logs-ot_endpoint.events-default)
+STREAMS=(logs-claroty_ctd.event-default logs-fortinet_fortigate.log-default logs-ot_endpoint.events-default logs-usb_laundry.events-default logs-plc4x.telemetry-default logs-opcua.telemetry-default)
 ALERTS_INDEX=".alerts-security.alerts-default"
 
 load_env
@@ -168,7 +174,60 @@ c6() {
   fi
 }
 
-c1; c2; c3; c4; c5; c6; c7
+# ---- 9 contrast scenario ---------------------------------------------------
+c9() {
+  local unk="${UNKNOWN_IP:-10.20.9.77}" rname n inv
+  rname="$(jq -r '.name' "$RULE")"
+  es POST "/$ALERTS_INDEX/_search" -d "$(jq -n --arg n "$rname" --arg ip "$unk" '{size:0,track_total_hits:true,query:{bool:{filter:[{term:{"kibana.alert.rule.name":$n}},{term:{"source.ip":$ip}}]}}}')" || true
+  is_2xx || { record 9 "Contrast: unmanaged source breaks out" FAIL "alert search failed: HTTP $HTTP_CODE"; return; }
+  n="$(printf '%s' "$HTTP_BODY" | jq -r '.hits.total.value')"
+  es POST "/ot-assets/_count" -d "$(jq -n --arg ip "$unk" '{query:{term:{"asset.ip":$ip}}}')" || true
+  is_2xx || { record 9 "Contrast: unmanaged source breaks out" FAIL "inventory lookup failed: HTTP $HTTP_CODE"; return; }
+  inv="$(printf '%s' "$HTTP_BODY" | jq -r '.count')"
+  if [[ $n -ge 1 && $inv -eq 0 ]]; then
+    record 9 "Contrast: unmanaged source breaks out" PASS "$n separate alert(s) from $unk, which has $inv inventory records"
+  else
+    record 9 "Contrast: unmanaged source breaks out" FAIL "alerts from $unk=$n (need >=1), inventory records=$inv (need 0); run: ./scripts/run-scenario.sh threat and wait for the rule"
+  fi
+}
+
+# ---- 10 USB laundry provenance --------------------------------------------
+c10() {
+  local n
+  n="$(count logs-usb_laundry.events-default '{"query":{"bool":{"filter":[{"term":{"event.action":"file_released"}},{"term":{"usb_laundry.released_to":"KPP-ENG-WS01"}},{"term":{"usb_laundry.scan_verdict":"clean"}}]}}}')"
+  if [[ ${n:-0} -ge 1 ]]; then
+    record 10 "USB laundry provenance" PASS "$n clean file release(s) to KPP-ENG-WS01 in logs-usb_laundry.events-default"
+  else
+    record 10 "USB laundry provenance" FAIL "no clean file_released event to KPP-ENG-WS01 (run ./scripts/run-scenario.sh scenario)"
+  fi
+}
+
+# ---- 11 sample Defender and ServiceNow data ---------------------------------
+c11() {
+  local d n
+  d="$(count logs-microsoft_defender_endpoint.log-default '{"query":{"term":{"labels.asset_name":"KPP-ENG-WS01"}}}')"
+  n="$(count logs-servicenow.event-default '{"query":{"term":{"servicenow.event.number.value":"INC0010231"}}}')"
+  if [[ ${d:-0} -ge 1 && ${n:-0} -ge 1 ]]; then
+    record 11 "Sample Defender and ServiceNow data" PASS "$d Defender alert(s) for KPP-ENG-WS01, $n ServiceNow update(s) for INC0010231 (sample data, integrations not configured)"
+  else
+    record 11 "Sample Defender and ServiceNow data" FAIL "Defender alerts=$d, ServiceNow updates=$n (run ./scripts/run-scenario.sh scenario)"
+  fi
+}
+
+# ---- 12 PLC telemetry and process impact --------------------------------------
+c12() {
+  local p o hi
+  p="$(count logs-plc4x.telemetry-default '{"query":{"range":{"@timestamp":{"gte":"now-30m"}}}}')"
+  o="$(count logs-opcua.telemetry-default '{"query":{"range":{"@timestamp":{"gte":"now-30m"}}}}')"
+  hi="$(count logs-plc4x.telemetry-default '{"query":{"bool":{"filter":[{"range":{"@timestamp":{"gte":"now-30m"}}},{"range":{"plc4x.tags.turbine_speed_rpm":{"gte":3100}}}]}}}')"
+  if [[ ${p:-0} -ge 1 && ${o:-0} -ge 1 && ${hi:-0} -ge 1 ]]; then
+    record 12 "PLC telemetry and process impact" PASS "PLC4X docs=$p, OPC UA docs=$o (30m); $hi turbine speed reading(s) >= 3100 rpm after the unmanaged-source setpoint change (sample data)"
+  else
+    record 12 "PLC telemetry and process impact" FAIL "PLC4X=$p, OPC UA=$o, speed excursion readings=$hi; run noise on, then ./scripts/run-scenario.sh threat and wait 1-2 minutes"
+  fi
+}
+
+c1; c2; c3; c4; c5; c6; c7; c9; c10; c11; c12
 
 jq -n --arg ts "$TS" --arg crit8 "manual: run terraform -chdir=infra destroy and confirm GuardDuty VPC cleanup" \
   --slurpfile r "$RES" '{timestamp:$ts,results:$r[0],criterion_8:$crit8}' >"$OUT"

@@ -1,0 +1,35 @@
+{
+  "name": "plc4x-telemetry-ot-demo",
+  "description": "SAMPLE turbine PLC telemetry in the shape of a PLC4X S7 driver collector (NDJSON), tailed from /var/log/ot-demo/plc4x.ndjson. No dedicated Elastic integration; the collector would normally ship via Logstash, Kafka or Agent.",
+  "namespace": "default",
+  "policy_ids": [
+    "__POLICY_ID__"
+  ],
+  "package": {
+    "name": "filestream",
+    "version": "__PACKAGE_VERSION__"
+  },
+  "inputs": {
+    "filestream-filestream": {
+      "enabled": true,
+      "streams": {
+        "filestream.filestream": {
+          "enabled": true,
+          "vars": {
+            "paths": [
+              "/var/log/ot-demo/plc4x.ndjson"
+            ],
+            "data_stream.dataset": "plc4x.telemetry",
+            "use_logs_stream": false,
+            "parsers": "- ndjson:\n    target: \"\"\n    overwrite_keys: true\n    add_error_key: true\n",
+            "tags": [
+              "ot-demo",
+              "plc4x",
+              "sample-data"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -14,6 +14,7 @@ Outputs:
 Claroty CEF field fidelity is synthetic.
 """
 import argparse
+import hashlib
 import json
 import os
 import random
@@ -26,6 +27,7 @@ ASSETS = {
     "KPP-PLC-T2": "10.20.4.12", "KPP-RTU-SS1": "10.20.4.30",
     "KPP-ENG-WS01": "10.20.3.21", "KPP-HMI-01": "10.20.3.10",
     "KPP-HIST-01": "10.20.3.40", "FGT-KPP-OT01": "10.20.0.1",
+    "KPP-USB-KIOSK01": "10.20.0.50",
 }
 PLC, RTU, ENG, HMI, HIST, FGT = (ASSETS[k] for k in (
     "KPP-PLC-T2", "KPP-RTU-SS1", "KPP-ENG-WS01", "KPP-HMI-01", "KPP-HIST-01", "FGT-KPP-OT01"))
@@ -48,7 +50,24 @@ NOISE_ALERTS = [  # low severity, repetitive, from ENG-WS01 to PLC
 SCEN_ALERTS = [("S7_READ_SCAN", "S7 Unauthorized Read/Scan", 5),
                ("PLC_PROG_DL", "PLC Program Download Detected", 5)]
 ENGINEER = "a.lindqvist"
+# Contrast storyline: an unmanaged host that is not in the asset inventory reaches the PLC through a
+# broad contractor policy. No endpoint telemetry exists for it (no agent installed).
+UNKNOWN_SRC = "10.20.9.77"
+FLOW_THREAT = (17, "Contractor-VPN-to-OT", UNKNOWN_SRC, PLC, "S7", 102, 6, "port1", "port3")
+THREAT_ALERTS = [("PLC_PROG_DL", "PLC Program Download Detected", 8),
+                 ("S7_READ_SCAN", "S7 Unauthorized Read/Scan", 7)]
 ENDPOINT_FILE = "/var/log/ot-demo/endpoint.ndjson"
+USB_FILE = "/var/log/ot-demo/usb_laundry.ndjson"
+KIOSK = "KPP-USB-KIOSK01"
+# Sample data shaped like the Microsoft Defender for Endpoint (log) and ServiceNow (event) integrations.
+# Neither integration is configured; the documents carry the real field names for demonstration only.
+DEFENDER_FILE = "/var/log/ot-demo/defender.ndjson"
+SERVICENOW_FILE = "/var/log/ot-demo/servicenow.ndjson"
+PLC4X_FILE = "/var/log/ot-demo/plc4x.ndjson"
+OPCUA_FILE = "/var/log/ot-demo/opcua.ndjson"
+OVERRIDE_FILE = "/var/log/ot-demo/.plc_override.json"  # written by the threat mode, read by noise
+INCIDENT_NO = "INC0010231"
+INCIDENT_SYS_ID = "9d385017c611228701d22104cc95c371"
 
 
 def utc(ts=None):
@@ -123,17 +142,228 @@ def ep_doc(ts, host, category, action, user=None, proc=None, src=None, dst=None,
     return json.dumps(d)
 
 
+def usb_doc(ts, action, user, file_name=None, sha256=None, verdict=None, released_to=None, serial=None, outcome="success"):
+    """Synthetic USB laundry (media sanitisation kiosk) event. The schema is a placeholder: replace
+    with the customer's real kiosk log format once a sample is available."""
+    d = {
+        "@timestamp": utc(ts).strftime("%Y-%m-%dT%H:%M:%S.") + "%03dZ" % (int(ts * 1000) % 1000),
+        "event": {"category": ["file"], "action": action, "outcome": outcome,
+                  "kind": "event", "dataset": "usb_laundry.events"},
+        "data_stream": {"type": "logs", "dataset": "usb_laundry.events", "namespace": "default"},
+        "labels": {"site": SITE, "demo": "ot-demo", "asset_name": KIOSK},
+        "user": {"name": user, "domain": "KPP"},
+        "usb_laundry": {"media_serial": serial or "USB-%06d" % random.randint(100000, 999999), "engines": 5},
+    }
+    if file_name:
+        d["file"] = {"name": file_name}
+        if sha256:
+            d["file"]["hash"] = {"sha256": sha256}
+    if verdict:
+        d["usb_laundry"]["scan_verdict"] = verdict
+        d["usb_laundry"]["threats_found"] = 0 if verdict == "clean" else random.randint(1, 3)
+    if released_to:
+        d["usb_laundry"]["released_to"] = released_to
+    return json.dumps(d)
+
+
+def _ts(ts):
+    return utc(ts).strftime("%Y-%m-%dT%H:%M:%S.") + "%03dZ" % (int(ts * 1000) % 1000)
+
+
+def defender_alert_doc(ts, host, user, message, description, status="Resolved", classification="FalsePositive",
+                       determination="Other", investigation="Benign", risk="Low", severity=1,
+                       assigned="Automated investigation", action="Discovery", incident="448201"):
+    """Microsoft Defender for Endpoint alert (microsoft_defender_endpoint.log shape)."""
+    return json.dumps({
+        "@timestamp": _ts(ts),
+        "data_stream": {"type": "logs", "dataset": "microsoft_defender_endpoint.log", "namespace": "default"},
+        "event": {"kind": "alert", "category": ["host"], "type": ["info"], "action": action, "severity": severity,
+                  "dataset": "microsoft_defender_endpoint.log", "provider": "defender_endpoint",
+                  "id": "da637%015d_1364969609" % random.randint(1, 10**15 - 1)},
+        "message": message,
+        "rule": {"description": description},
+        "host": {"name": host, "risk": {"calculated_level": risk}, "os": {"platform": "Windows10"}},
+        "labels": {"site": SITE, "demo": "ot-demo", "asset_name": host},
+        "user": {"name": user, "domain": "KPP"},
+        "observer": {"name": "WindowsDefenderAtp", "product": "Defender for Endpoint", "vendor": "Microsoft"},
+        "microsoft": {"defender_endpoint": {
+            "status": status, "classification": classification, "determination": determination,
+            "investigationState": investigation, "incidentId": incident, "assignedTo": assigned,
+            "lastUpdateTime": _ts(ts + 2),
+            "evidence": {"accountName": user, "domainName": "KPP", "entityType": "User"}}},
+        "tags": ["microsoft-defender-endpoint", "forwarded", "sample-data"],
+    })
+
+
+def servicenow_doc(ts, state_value, state_display, assigned_to=None, close_notes=None, number=INCIDENT_NO,
+                   short="Claroty CTD: PLC Program Download Detected on KPP-PLC-T2 (Karins Power Plant)",
+                   asset="KPP-PLC-T2", priority=(3, "3 - Moderate"), group=("ot-security", "OT Security"),
+                   opened_ts=None):
+    """ServiceNow incident record (servicenow.event shape)."""
+    def dv(v, d=None):
+        return {"display_value": d if d is not None else v, "value": v}
+    sys_id = hashlib.md5(number.encode()).hexdigest()
+    opened = opened_ts if opened_ts is not None else ts - 60
+    ev = {
+        "number": dv(number), "sys_id": {"value": sys_id}, "table_name": "incident",
+        "short_description": dv(short),
+        "priority": dv(priority[0], priority[1]), "state": dv(state_value, state_display),
+        "assignment_group": dv(group[0], group[1]),
+        "opened_at": {"display_value": _ts(opened), "value": _ts(opened)},
+        "sys_updated_on": {"display_value": _ts(ts), "value": _ts(ts)},
+        "sys_created_by": dv("claroty.integration"),
+        "sys_updated_by": dv(assigned_to or "claroty.integration"),
+    }
+    if assigned_to:
+        ev["assigned_to"] = dv(assigned_to)
+    if close_notes:
+        ev["close_notes"] = dv(close_notes)
+        ev["closed_at"] = {"display_value": _ts(ts), "value": _ts(ts)}
+    return json.dumps({
+        "@timestamp": _ts(ts),
+        "data_stream": {"type": "logs", "dataset": "servicenow.event", "namespace": "default"},
+        "event": {"kind": "event", "category": ["configuration"], "type": ["info"], "dataset": "servicenow.event",
+                  "id": sys_id},
+        "labels": {"site": SITE, "demo": "ot-demo", "asset_name": asset},
+        "servicenow": {"event": ev},
+        "tags": ["incident", "forwarded", "servicenow-event", "sample-data"],
+    })
+
+
+def _fl(x, nd=2):
+    return round(float(x), nd)  # always a float so dynamic mapping picks a float type
+
+
+def plc_values(ts, ov=None):
+    """Process values read from the turbine PLC. During a setpoint override the speed, vibration and
+    temperature drift towards the new setpoint over `ramp` seconds (parameter-modification storyline)."""
+    sp, frac = 3000.0, 0.0
+    if ov and ov["start"] <= ts <= ov["until"]:
+        sp = float(ov["setpoint"])
+        frac = min(1.0, (ts - ov["start"]) / float(ov.get("ramp", 90)))
+    return {
+        "turbine_speed_rpm": _fl(3000.0 + (sp - 3000.0) * frac + random.gauss(0, 3)),
+        "governor_setpoint_rpm": _fl(sp),
+        "bearing_temp_c": _fl(68.0 + 8.0 * frac + random.gauss(0, 0.6)),
+        "vibration_mm_s": _fl(2.1 + 2.8 * frac + random.gauss(0, 0.12)),
+        "load_mw": _fl(48.0 + 6.0 * frac + random.gauss(0, 0.4)),
+    }
+
+
+def plc4x_doc(ts, vals):
+    """Telemetry polled from KPP-PLC-T2 by a PLC4X S7 driver (sample data, no dedicated Elastic integration)."""
+    return json.dumps({
+        "@timestamp": _ts(ts),
+        "data_stream": {"type": "logs", "dataset": "plc4x.telemetry", "namespace": "default"},
+        "event": {"kind": "metric", "category": ["process"], "type": ["info"], "dataset": "plc4x.telemetry"},
+        "labels": {"site": SITE, "demo": "ot-demo", "asset_name": "KPP-PLC-T2"},
+        "observer": {"product": "PLC4X S7 driver", "vendor": "Apache PLC4X"},
+        "plc4x": {"driver": "s7", "connection": "s7://%s:102" % PLC, "tags": vals},
+        "tags": ["sample-data"],
+    })
+
+
+def opcua_doc(ts):
+    """Substation values read from KPP-RTU-SS1 through an OPC UA client (sample data)."""
+    return json.dumps({
+        "@timestamp": _ts(ts),
+        "data_stream": {"type": "logs", "dataset": "opcua.telemetry", "namespace": "default"},
+        "event": {"kind": "metric", "category": ["process"], "type": ["info"], "dataset": "opcua.telemetry"},
+        "labels": {"site": SITE, "demo": "ot-demo", "asset_name": "KPP-RTU-SS1"},
+        "observer": {"product": "OPC UA client", "vendor": "OPC Foundation"},
+        "opcua": {"endpoint": "opc.tcp://%s:4840" % HIST, "status_code": "Good", "tags": {
+            "breaker_closed": True,
+            "bus_voltage_kv": _fl(132.0 + random.gauss(0, 0.3)),
+            "line_current_a": _fl(210.0 + random.gauss(0, 4)),
+            "frequency_hz": _fl(50.0 + random.gauss(0, 0.015), 3)}},
+        "tags": ["sample-data"],
+    })
+
+
+def read_override(path):
+    try:
+        with open(path) as f:
+            ov = json.load(f)
+        return ov if ov.get("until", 0) > time.time() else None
+    except (OSError, ValueError):
+        return None
+
+
+def telemetry_tick(sink, ts, ov=None):
+    sink.plc4x(plc4x_doc(ts, plc_values(ts, ov)))
+    sink.opcua(opcua_doc(ts))
+
+
+DEFENDER_BACKGROUND = [  # (message, description, severity, status, classification, determination, investigation, risk, host, user)
+    ("Unsigned driver loaded", "A driver without a valid signature was loaded by the HMI runtime.", 1, "Resolved", "FalsePositive", "Other", "Benign", "Low", "KPP-HMI-01", "svc_scada"),
+    ("Remote Desktop connection from jump host", "RDP session from the control DMZ jump host matches an allowed administration path.", 1, "Resolved", "FalsePositive", "Other", "Benign", "Low", "KPP-HIST-01", "svc_scada"),
+    ("Suspicious PowerShell command line", "PowerShell was run with an encoded command. Confirmed as an approved security test.", 2, "Resolved", "TruePositive", "SecurityTesting", "SuccessfullyRemediated", "Low", "KPP-HMI-01", "operator1"),
+    ("Software installer launched from removable media", "An installer ran from removable media that was scanned at the USB laundry kiosk.", 1, "Resolved", "FalsePositive", "Other", "Benign", "Low", "KPP-ENG-WS01", "m.virtanen"),
+    ("Potentially unwanted application detected", "A bundled utility on the historian was flagged as potentially unwanted. Under review.", 2, "InProgress", "Unknown", "NotAvailable", "Running", "Medium", "KPP-HIST-01", "svc_scada"),
+]
+
+
+def background_defender(sink, ts):
+    m = random.choice(DEFENDER_BACKGROUND)
+    sink.defender(defender_alert_doc(ts, m[8], m[9], m[0], m[1], status=m[3], classification=m[4],
+                                     determination=m[5], investigation=m[6], risk=m[7], severity=m[2],
+                                     incident=str(random.randint(448000, 449999))))
+
+
+def history(sink, now):
+    """Backdated Defender alerts and ServiceNow incidents so the panels look lived-in."""
+    for i, m in enumerate(DEFENDER_BACKGROUND):
+        for k in range(2):
+            ts = now - (1800 + i * 5400 + k * 25000 + random.randint(0, 1800))
+            sink.defender(defender_alert_doc(ts, m[8], m[9], m[0], m[1], status=m[3], classification=m[4],
+                                             determination=m[5], investigation=m[6], risk=m[7], severity=m[2],
+                                             incident=str(448100 + i * 10 + k)))
+    H = 3600.0
+    incidents = [  # (number, short description, asset, priority, group, [(hours ago, state, assignee, close note)])
+        ("INC0010188", "FortiGate FGT-KPP-OT01: firmware advisory review", "FGT-KPP-OT01", (3, "3 - Moderate"),
+         ("network-ops", "Network Operations"),
+         [(21, (1, "New"), None, None), (20.5, (2, "In Progress"), "N. Aaltonen", None),
+          (18, (7, "Closed"), "N. Aaltonen", "Advisory reviewed, no action needed for the installed firmware.")]),
+        ("INC0010197", "Claroty CTD: Unusual Modbus write from KPP-HMI-01 (false positive)", "KPP-HMI-01", (3, "3 - Moderate"),
+         ("ot-security", "OT Security"),
+         [(9, (1, "New"), None, None), (8.8, (2, "In Progress"), "J. Koskinen", None),
+          (8.5, (7, "Closed"), "J. Koskinen", "Operator setpoint adjustment confirmed with the shift lead.")]),
+        ("INC0010203", "KPP-HIST-01: Defender alert, potentially unwanted application", "KPP-HIST-01", (2, "2 - High"),
+         ("ot-security", "OT Security"),
+         [(5, (1, "New"), None, None), (4.5, (2, "In Progress"), "OT SOC analyst", None)]),
+        ("INC0010209", "USB laundry kiosk: scan engine signature update", "KPP-USB-KIOSK01", (4, "4 - Low"),
+         ("ot-security", "OT Security"),
+         [(14, (1, "New"), None, None), (13, (3, "On Hold"), "S. Laine", None)]),
+        ("INC0010214", "Claroty CTD: S7 Unauthorized Read/Scan from KPP-ENG-WS01 (maintenance window)", "KPP-PLC-T2", (3, "3 - Moderate"),
+         ("ot-security", "OT Security"),
+         [(2.2, (1, "New"), None, None), (2.1, (2, "In Progress"), "OT SOC analyst", None),
+          (1.8, (7, "Closed"), "OT SOC analyst", "False positive: scheduled maintenance, known-good workstation.")]),
+    ]
+    for number, short, asset, prio, grp, steps in incidents:
+        opened = now - steps[0][0] * H
+        for hrs, (sv, sd), who, note in steps:
+            sink.servicenow(servicenow_doc(now - hrs * H, str(sv), sd, assigned_to=who, close_notes=note,
+                                           number=number, short=short, asset=asset, priority=prio,
+                                           group=grp, opened_ts=opened))
+
+
 class Sink:
     """Handles TCP (reconnecting), UDP and file output, or stdout in dry-run."""
 
     def __init__(self, a):
-        self.a, self.tcp, self.udp, self.f = a, None, None, None
+        self.a, self.tcp, self.udp, self.f, self.uf, self.df, self.sf, self.pf, self.of = a, None, None, None, None, None, None, None, None
         self.samples = {}
         if not a.dry_run:
             self.udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             d = os.path.dirname(a.endpoint_file)
             os.makedirs(d, exist_ok=True)
             self.f = open(a.endpoint_file, "a", buffering=1)
+            os.makedirs(os.path.dirname(a.usb_file), exist_ok=True)
+            self.uf = open(a.usb_file, "a", buffering=1)
+            self.df = open(a.defender_file, "a", buffering=1)
+            self.sf = open(a.servicenow_file, "a", buffering=1)
+            self.pf = open(a.plc4x_file, "a", buffering=1)
+            self.of = open(a.opcua_file, "a", buffering=1)
 
     def _connect(self):
         while True:
@@ -176,6 +406,31 @@ class Sink:
             return self._dry("endpoint", line)
         self.f.write(line + "\n")
 
+    def usb(self, line):
+        if self.a.dry_run:
+            return self._dry("usb", line)
+        self.uf.write(line + "\n")
+
+    def defender(self, line):
+        if self.a.dry_run:
+            return self._dry("defender", line)
+        self.df.write(line + "\n")
+
+    def servicenow(self, line):
+        if self.a.dry_run:
+            return self._dry("servicenow", line)
+        self.sf.write(line + "\n")
+
+    def plc4x(self, line):
+        if self.a.dry_run:
+            return self._dry("plc4x", line)
+        self.pf.write(line + "\n")
+
+    def opcua(self, line):
+        if self.a.dry_run:
+            return self._dry("opcua", line)
+        self.of.write(line + "\n")
+
     def _dry(self, kind, line):
         n = self.samples.get(kind, 0)
         self.samples[kind] = n + 1
@@ -195,6 +450,29 @@ def normal_tick(sink, ts):
         sink.ep(ep_doc(ts, h, "process", "start", user="svc_scada", proc=p))
     if random.random() < 0.05:
         sink.ep(ep_doc(ts, "KPP-HMI-01", "authentication", "logon", user="operator1"))
+    if random.random() < 0.008:  # roughly one media session a minute at the default event rate
+        usb_session(sink, ts, random.choice(USB_USERS), random.choice(USB_FILES),
+                    release_to=random.choice(["KPP-HMI-01", "KPP-HIST-01"]),  # not the engineering workstation
+                    verdict="blocked" if random.random() < 0.1 else "clean")
+
+
+def usb_session(sink, ts, user, file_name, release_to=None, verdict="clean"):
+    """media inserted -> scan -> release (clean) or block."""
+    serial = "USB-%06d" % random.randint(100000, 999999)
+    sha = "%064x" % random.getrandbits(256)
+    sink.usb(usb_doc(ts, "media_inserted", user, serial=serial))
+    sink.usb(usb_doc(ts + 20, "scan_completed", user, file_name, sha, verdict=verdict, serial=serial,
+                     outcome="success" if verdict == "clean" else "failure"))
+    if verdict == "clean":
+        sink.usb(usb_doc(ts + 25, "file_released", user, file_name, sha, verdict="clean",
+                         released_to=release_to or "KPP-ENG-WS01", serial=serial))
+    else:
+        sink.usb(usb_doc(ts + 25, "file_blocked", user, file_name, sha, verdict=verdict, serial=serial,
+                         outcome="failure"))
+
+
+USB_USERS = ["m.virtanen", "j.koskinen", "s.laine"]
+USB_FILES = ["vendor_firmware_update.zip", "shift_report.xlsx", "hmi_screens_backup.zip", "plc_diag_log.csv"]
 
 
 def noise_alert(sink, ts):
@@ -205,10 +483,17 @@ def noise_alert(sink, ts):
 def run_noise(a, sink):
     print("noise mode: ~%.1f alerts/min, ~%.1f events/s" % (a.alert_rate, a.event_rate), file=sys.stderr)
     nxt_alert = time.time()
+    nxt_tel = nxt_def = time.time()
     n = 0
     while True:
         now = time.time()
         normal_tick(sink, now)
+        if now >= nxt_tel:
+            telemetry_tick(sink, now, read_override(a.override_file))
+            nxt_tel = now + 5.0
+        if now >= nxt_def:
+            background_defender(sink, now)
+            nxt_def = now + random.expovariate(1 / 600.0)
         if now >= nxt_alert:
             noise_alert(sink, now)
             nxt_alert = now + random.expovariate(a.alert_rate / 60.0) if a.alert_rate > 0 else now + 3600
@@ -222,10 +507,14 @@ def run_backfill(a, sink):
     end = time.time()
     start = end - a.hours * 3600
     step = 60.0 / max(a.backfill_events_per_min, 1)
-    ts, nxt_alert, count = start, start, 0
+    history(sink, end)
+    ts, nxt_alert, nxt_tel, count = start, start, start, 0
     alert_gap = 60.0 / max(a.alert_rate, 0.01)
     while ts < end:
         normal_tick(sink, ts)
+        if ts >= nxt_tel:
+            telemetry_tick(sink, ts)
+            nxt_tel = ts + 30.0
         if ts >= nxt_alert:
             noise_alert(sink, ts)
             nxt_alert = ts + alert_gap * random.uniform(0.5, 1.5)
@@ -240,6 +529,20 @@ def run_backfill(a, sink):
 
 def run_scenario(a, sink):
     t0 = time.time()
+    # Provenance: the engineer scanned the project file at the USB laundry kiosk before the change.
+    history(sink, t0)
+    for k in range(90):  # 45 minutes of steady turbine telemetry (the process is unaffected by the change)
+        telemetry_tick(sink, t0 - 2700 + k * 30)
+    usb_session(sink, t0 - 420, ENGINEER, "TurbineGovernor_v14.zap18", release_to="KPP-ENG-WS01")
+    # Sample Defender for Endpoint alert on the workstation (informational, auto-resolved) and the
+    # ServiceNow incident that Claroty opens for the alert (New, then In Progress).
+    sink.defender(defender_alert_doc(
+        t0 + 3, "KPP-ENG-WS01", ENGINEER,
+        "Engineering software communicated with an industrial controller",
+        "Siemens TIA Portal opened a connection to a PLC on the control network. Matches an allowed engineering "
+        "workflow for this device, so the alert was auto-resolved."))
+    sink.servicenow(servicenow_doc(t0 + 2, "1", "New"))
+    sink.servicenow(servicenow_doc(t0 + 6, "2", "In Progress", assigned_to="OT SOC analyst"))
     # Engineer logon, then TIA Portal (maintenance window)
     sink.ep(ep_doc(t0, "KPP-ENG-WS01", "authentication", "logon", user=ENGINEER))
     sink.ep(ep_doc(t0 + 5, "KPP-ENG-WS01", "process", "start", user=ENGINEER,
@@ -264,15 +567,45 @@ def run_scenario(a, sink):
     print("scenario done: %d claroty alerts sent" % n, file=sys.stderr)
 
 
+def run_ticket_close(a, sink):
+    """Analyst closed the case in Elastic: the ServiceNow incident is closed as a false positive."""
+    sink.servicenow(servicenow_doc(time.time(), "7", "Closed", assigned_to="OT SOC analyst",
+                                   close_notes="False positive: scheduled maintenance, known-good workstation, clean USB scan."))
+    print("ticket-close done: %s closed" % INCIDENT_NO, file=sys.stderr)
+
+
+def run_threat(a, sink):
+    """A handful of alerts from a source that is not in the inventory, via a different firewall policy."""
+    t0 = time.time()
+    ov = {"start": t0, "until": t0 + 300, "setpoint": 3150.0, "ramp": 90}
+    if not a.dry_run:
+        with open(a.override_file, "w") as f:  # noise telemetry follows this for 5 minutes
+            json.dump(ov, f)
+    n = 12
+    for i in range(n):
+        ts = t0 + i * 2.5
+        telemetry_tick(sink, ts, ov)
+        sid, name, sev = THREAT_ALERTS[0] if i % 3 else THREAT_ALERTS[1]
+        sink.claroty(claroty_line(ts, sid, name, sev, UNKNOWN_SRC, PLC))
+        sink.fgt(fgt_line(ts, FLOW_THREAT))
+    print("threat done: %d claroty alerts sent from unmanaged host %s" % (n, UNKNOWN_SRC), file=sys.stderr)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--mode", required=True, choices=["noise", "backfill", "scenario"])
+    p.add_argument("--mode", required=True, choices=["noise", "backfill", "scenario", "threat", "ticket-close"])
     p.add_argument("--hours", type=float, default=24, help="backfill window")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, dest="claroty_port", default=9100, help="Claroty CEF TCP port")
     p.add_argument("--claroty-port", type=int, dest="claroty_port", help=argparse.SUPPRESS)
     p.add_argument("--fortigate-port", type=int, default=9004)
     p.add_argument("--endpoint-file", default=ENDPOINT_FILE)
+    p.add_argument("--usb-file", default=USB_FILE)
+    p.add_argument("--defender-file", default=DEFENDER_FILE)
+    p.add_argument("--plc4x-file", default=PLC4X_FILE)
+    p.add_argument("--opcua-file", default=OPCUA_FILE)
+    p.add_argument("--override-file", default=OVERRIDE_FILE)
+    p.add_argument("--servicenow-file", default=SERVICENOW_FILE)
     p.add_argument("--alert-rate", type=float, default=6.0, help="noise Claroty alerts per minute")
     p.add_argument("--event-rate", type=float, default=2.0, help="noise normal events per second")
     p.add_argument("--backfill-events-per-min", type=int, default=30)
@@ -286,7 +619,7 @@ def main():
         random.seed(a.seed)
     sink = Sink(a)
     try:
-        {"noise": run_noise, "backfill": run_backfill, "scenario": run_scenario}[a.mode](a, sink)
+        {"noise": run_noise, "backfill": run_backfill, "scenario": run_scenario, "threat": run_threat, "ticket-close": run_ticket_close}[a.mode](a, sink)
     except KeyboardInterrupt:
         pass
     if a.dry_run:

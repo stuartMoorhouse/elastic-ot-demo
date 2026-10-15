@@ -2,7 +2,9 @@
 # Control the OT generator on the EC2 host over SSH.
 #   run-scenario.sh noise on|off
 #   run-scenario.sh backfill [HOURS]     (default 24)
-#   run-scenario.sh scenario
+#   run-scenario.sh scenario             (Karins false-positive storyline)
+#   run-scenario.sh threat               (contrast: unmanaged source, not in inventory)
+#   run-scenario.sh ticket-close         (sample ServiceNow incident closed after the case is closed)
 #   run-scenario.sh status
 # SSH details come from terraform outputs (ssh_command, or ec2_public_ip + infra/*.pem).
 # Override with OT_SSH_CMD="ssh -i key.pem ubuntu@1.2.3.4".
@@ -55,6 +57,15 @@ case "$action" in
     remote "sudo python3 $GEN --mode scenario"
     env_set demo_executed true json
     log "scenario sent; demo_executed=true"
+    ;;
+  threat)
+    log "triggering contrast (threat) scenario at $(date -u +%FT%TZ)"
+    remote "sudo python3 $GEN --mode threat"
+    log "threat scenario sent"
+    ;;
+  ticket-close)
+    remote "sudo python3 $GEN --mode ticket-close"
+    log "sample ServiceNow incident closed"
     ;;
   status)
     remote "systemctl is-active $UNIT || true; ls -l /var/log/ot-demo/ 2>/dev/null || true"

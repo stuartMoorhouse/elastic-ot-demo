@@ -5,10 +5,15 @@ Nothing here has been applied to a cluster. Target: Elastic Cloud 9.5. All reque
 | File | Purpose | Endpoint |
 |---|---|---|
 | assets/ot-assets-index.json | Asset inventory index, `index.mode: lookup` (for ES\|QL LOOKUP JOIN) | `PUT /ot-assets` (Elasticsearch) |
-| assets/ot-assets.ndjson | Six scenario assets with owner and maintenance window, `_id` = asset name | `POST /ot-assets/_bulk?refresh=wait_for` (Content-Type application/x-ndjson) |
+| assets/ot-assets.ndjson | Seven scenario assets with owner and maintenance window, `_id` = asset name | `POST /ot-assets/_bulk?refresh=wait_for` (Content-Type application/x-ndjson) |
 | fleet/claroty_ctd.json | Claroty CTD package policy, TCP 127.0.0.1:9100 | `POST /api/fleet/package_policies` |
 | fleet/fortinet_fortigate.json | FortiGate package policy, UDP 127.0.0.1:9004 | `POST /api/fleet/package_policies` |
 | fleet/ot_endpoint_logs.json | Custom Logs (Filestream) policy, `/var/log/ot-demo/endpoint.ndjson`, ndjson parser, dataset `ot_endpoint.events` | `POST /api/fleet/package_policies` |
+| fleet/usb_laundry_logs.json | Custom Logs (Filestream) policy, `/var/log/ot-demo/usb_laundry.ndjson`, dataset `usb_laundry.events` (synthetic kiosk schema, placeholder) | `POST /api/fleet/package_policies` |
+| fleet/defender_logs.json | SAMPLE Defender for Endpoint alerts, filestream policy, `/var/log/ot-demo/defender.ndjson`, dataset `microsoft_defender_endpoint.log` (real integration not configured) | `POST /api/fleet/package_policies` |
+| fleet/servicenow_logs.json | SAMPLE ServiceNow incident events, filestream policy, `/var/log/ot-demo/servicenow.ndjson`, dataset `servicenow.event` (real integration not configured) | `POST /api/fleet/package_policies` |
+| fleet/plc4x_telemetry.json | SAMPLE turbine PLC telemetry (PLC4X S7 shape), filestream policy, `/var/log/ot-demo/plc4x.ndjson`, dataset `plc4x.telemetry` | `POST /api/fleet/package_policies` |
+| fleet/opcua_telemetry.json | SAMPLE substation values (OPC UA client shape), filestream policy, `/var/log/ot-demo/opcua.ndjson`, dataset `opcua.telemetry` | `POST /api/fleet/package_policies` |
 | detection/claroty-suppressed-alert.json | Query rule with alert suppression | `POST /api/detection_engine/rules` |
 | cases/case-template.json | Body for the grouped-alert case | `POST /api/cases` |
 | dashboards/ot-dashboards.ndjson | 3 data views + 3 dashboards (legacy saved objects) | `POST /api/saved_objects/_import` |
