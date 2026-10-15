@@ -3,7 +3,7 @@
 #   reset-demo.sh [--keep-data] [--rerun]
 # - deletes cases tagged "ot-demo" (falls back to nothing destructive beyond that tag)
 # - deletes the demo detection-rule alerts (falls back to closing them)
-# - deletes all documents in the eight demo data streams, keeping the streams (skip with --keep-data)
+# - deletes all documents in the ten demo data streams, keeping the streams (skip with --keep-data)
 # - sets demo_executed=false; with --rerun triggers the scenario again afterwards
 set -euo pipefail
 # shellcheck source=lib.sh
@@ -20,7 +20,7 @@ for a in "$@"; do
 done
 
 RULE="$CONFIG_DIR/detection/claroty-suppressed-alert.json"
-STREAMS=(logs-claroty_ctd.event-default logs-fortinet_fortigate.log-default logs-ot_endpoint.events-default logs-usb_laundry.events-default logs-microsoft_defender_endpoint.log-default logs-servicenow.event-default logs-plc4x.telemetry-default logs-opcua.telemetry-default)
+STREAMS=(logs-claroty_ctd.event-default logs-fortinet_fortigate.log-default logs-ot_endpoint.events-default logs-meta_data_kiosk.log-default logs-microsoft_defender_endpoint.log-default logs-servicenow.event-default logs-plc4x.telemetry-default logs-opcua.telemetry-default logs-claroty_ctd.asset-default logs-claroty_ctd.baseline-default)
 ALERTS_INDEX=".alerts-security.alerts-default"
 
 load_env

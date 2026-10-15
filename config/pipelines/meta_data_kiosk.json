@@ -1,0 +1,47 @@
+{
+  "description": "OPSWAT MetaDefender Kiosk (Meta Data Kiosk) BSD syslog to ECS. Header layout follows the OPSWAT docs; the JSON message bodies are assumed, validate against a real kiosk export.",
+  "processors": [
+    {"set": {"field": "event.original", "copy_from": "message", "ignore_empty_value": true}},
+    {"grok": {
+      "field": "message",
+      "patterns": ["^<%{NONNEGINT:_tmp.pri}>\\s*%{TIMESTAMP_ISO8601:_tmp.ts}\\s+%{HOSTNAME:host.name}\\s+%{WORD:_tmp.product}\\[%{NONNEGINT:process.pid}\\]\\s+eventCode='%{DATA:event.code}',\\s+logType='%{DATA:_tmp.log_type}',\\s+%{GREEDYDATA:_tmp.body}$"]
+    }},
+    {"date": {"field": "_tmp.ts", "formats": ["ISO8601"], "target_field": "@timestamp"}},
+    {"convert": {"field": "process.pid", "type": "long", "ignore_missing": true}},
+    {"script": {
+      "description": "syslog PRI to facility and severity",
+      "lang": "painless",
+      "source": "int pri = Integer.parseInt(ctx._tmp.pri); ctx.log = ctx.log == null ? new HashMap() : ctx.log; ctx.log.syslog = ['facility': ['code': pri / 8], 'severity': ['code': pri % 8]]; ctx.event.severity = pri % 8;"
+    }},
+    {"json": {"field": "_tmp.body", "target_field": "_tmp.json", "if": "ctx._tmp.body.startsWith('{')", "ignore_failure": true}},
+    {"set": {"field": "message", "copy_from": "_tmp.json.message", "if": "ctx._tmp.json?.message != null"}},
+    {"set": {"field": "message", "copy_from": "_tmp.json.scanResultDescription", "if": "ctx._tmp.json?.message == null && ctx._tmp.json?.scanResultDescription != null"}},
+    {"set": {"field": "message", "copy_from": "_tmp.body", "if": "ctx._tmp.json == null"}},
+    {"set": {"field": "user.name", "copy_from": "_tmp.json.userId", "if": "ctx._tmp.json?.userId != null"}},
+    {"set": {"field": "file.name", "copy_from": "_tmp.json.fileName", "if": "ctx._tmp.json?.fileName != null"}},
+    {"set": {"field": "file.hash.sha256", "copy_from": "_tmp.json.sha256", "if": "ctx._tmp.json?.sha256 != null"}},
+    {"set": {"field": "meta_data_kiosk.session_id", "copy_from": "_tmp.json.sessionId", "if": "ctx._tmp.json?.sessionId != null"}},
+    {"set": {"field": "meta_data_kiosk.scan_result", "copy_from": "_tmp.json.scanResult", "if": "ctx._tmp.json?.scanResult != null"}},
+    {"set": {"field": "meta_data_kiosk.scan_result_description", "copy_from": "_tmp.json.scanResultDescription", "if": "ctx._tmp.json?.scanResultDescription != null"}},
+    {"set": {"field": "meta_data_kiosk.log_type", "copy_from": "_tmp.log_type"}},
+    {"set": {"field": "meta_data_kiosk.device.type", "copy_from": "_tmp.json.deviceType", "if": "ctx._tmp.json?.deviceType != null"}},
+    {"set": {"field": "meta_data_kiosk.device.manufacturer", "copy_from": "_tmp.json.deviceManufacturer", "if": "ctx._tmp.json?.deviceManufacturer != null"}},
+    {"set": {"field": "meta_data_kiosk.device.model", "copy_from": "_tmp.json.deviceModel", "if": "ctx._tmp.json?.deviceModel != null"}},
+    {"set": {"field": "meta_data_kiosk.device.serial_number", "copy_from": "_tmp.json.deviceSerialNumber", "if": "ctx._tmp.json?.deviceSerialNumber != null"}},
+    {"set": {"field": "meta_data_kiosk.total_files_scanned", "copy_from": "_tmp.json.totalFilesScanned", "if": "ctx._tmp.json?.totalFilesScanned != null"}},
+    {"set": {"field": "meta_data_kiosk.total_files_allowed", "copy_from": "_tmp.json.totalFilesAllowed", "if": "ctx._tmp.json?.totalFilesAllowed != null"}},
+    {"set": {"field": "meta_data_kiosk.total_files_blocked", "copy_from": "_tmp.json.totalFilesBlocked", "if": "ctx._tmp.json?.totalFilesBlocked != null"}},
+    {"script": {
+      "description": "event.code to ECS category, action, type and outcome",
+      "lang": "painless",
+      "source": "def c = ctx.event.code; def m = ['100000': ['file', 'file-allowed', 'info', 'success'], '100001': ['file', 'file-blocked', 'denied', 'failure'], '100002': ['authentication', 'user-login', 'start', 'success'], '100003': ['configuration', 'configuration-changed', 'change', 'success'], '100006': ['authentication', 'authentication-failure', 'info', 'failure'], '100008': ['host', 'device-connected', 'info', 'success'], '100010': ['session', 'session-started', 'start', 'success'], '200000': ['session', 'session-ended', 'end', 'success']]; def e = m.get(c); if (e != null) { ctx.event.category = [e[0] == 'session' ? 'host' : e[0]]; ctx.event.action = e[1]; ctx.event.type = [e[2]]; ctx.event.outcome = e[3]; }"
+    }},
+    {"set": {"field": "event.kind", "value": "event"}},
+    {"set": {"field": "observer.vendor", "value": "OPSWAT"}},
+    {"set": {"field": "observer.product", "value": "MetaDefender Kiosk"}},
+    {"remove": {"field": "_tmp", "ignore_missing": true}}
+  ],
+  "on_failure": [
+    {"set": {"field": "error.message", "value": "{{{ _ingest.on_failure_message }}}"}}
+  ]
+}

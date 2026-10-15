@@ -43,6 +43,35 @@ require_2xx "bulk load assets"
 [[ "$(printf '%s' "$HTTP_BODY" | jq -r '.errors')" == false ]] || die "bulk load reported item errors: $(printf '%s' "$HTTP_BODY" | head -c 600)"
 log "loaded $expected assets"
 
+# ---- 2b. install the real ServiceNow and Defender for Endpoint packages (no policy: no instance or tenant to pull from)
+# Their templates and ingest pipelines parse the API-shaped sample data loaded by load-api-data.sh.
+for pkg in servicenow microsoft_defender_endpoint; do
+  kb GET "/api/fleet/epm/packages/$pkg?prerelease=true"; require_2xx "look up package $pkg"
+  status="$(printf '%s' "$HTTP_BODY" | jq -r '.item.status // .response.status // empty')"
+  if [[ $status == installed ]]; then
+    log "package $pkg already installed"
+  else
+    pver="$(printf '%s' "$HTTP_BODY" | jq -r '.item.version // .response.version // empty')"
+    [[ -n $pver ]] || die "could not resolve latest version of package $pkg"
+    kb POST "/api/fleet/epm/packages/$pkg/$pver" -d '{"force":true}'; require_2xx "install package $pkg"
+    log "installed package $pkg $pver"
+  fi
+done
+# remove the earlier custom filestream stand-ins for these two, if present
+kb GET "/api/fleet/package_policies?perPage=200"; require_2xx "list package policies"
+legacy="$(printf '%s' "$HTTP_BODY" | jq -c '[.items[] | select(.name=="servicenow-logs-ot-demo" or .name=="defender-logs-ot-demo") | .id]')"
+if [[ $legacy != "[]" ]]; then
+  kb POST /api/fleet/package_policies/delete -d "{\"packagePolicyIds\":$legacy}"; require_2xx "delete legacy stand-in policies"
+  log "removed custom filestream stand-ins for ServiceNow and Defender"
+fi
+
+# ---- 2c. ingest pipelines referenced by custom Fleet policies (Meta Data Kiosk syslog -> ECS) -------
+for f in "$CONFIG_DIR"/pipelines/*.json; do
+  pname="$(basename "$f" .json)"
+  es PUT "/_ingest/pipeline/$pname" --data-binary "@$f"; require_2xx "create ingest pipeline $pname"
+  log "ingest pipeline $pname loaded"
+done
+
 # ---- 3. Fleet package policies -------------------------------------------
 kb GET "/api/fleet/agent_policies?perPage=100" || die "Kibana unreachable"
 require_2xx "list agent policies"

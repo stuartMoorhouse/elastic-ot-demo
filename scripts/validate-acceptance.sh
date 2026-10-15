@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Check acceptance criteria 1-7 and 9-12 via API and write results/acceptance-<timestamp>.json.
+# Check acceptance criteria 1-7 and 9-13 via API and write results/acceptance-<timestamp>.json.
 #   1 Fleet agent healthy (online)
 #   2 docs in last 5 min per data stream, event.dataset set, no error.message
 #   3 unified dashboard exists and data for the PLC (FortiGate rule hits, network events) is present
@@ -7,10 +7,12 @@
 #   5 suppression: <=5 alerts for >=1000 raw Claroty events
 #   6 case created from the alert and closed (false positive) via API within 180s
 #   7 <=4 demo (non-managed) dashboards
-#  10 USB laundry provenance: a clean scan and release of a file to KPP-ENG-WS01 exists (run the scenario first)
+#  10 Meta Data Kiosk provenance: the project file TurbineGovernor_v14.zap18 was scanned and allowed at the kiosk (run the scenario first)
 #  11 sample Defender alert for KPP-ENG-WS01 and ServiceNow incident updates exist (run the scenario first)
 #  12 PLC telemetry (PLC4X S7 and OPC UA, sample data) is flowing; after `run-scenario.sh threat` the turbine speed
 #     shows the setpoint excursion (>= 3100 rpm) that the unmanaged source caused
+#  13 the Claroty CTD integration dashboards have what they need: all five syslog classes, the alert, health and
+#     insight fields, asset and baseline records (incl. a ghost asset), and no ingest errors
 #   9 contrast: after `run-scenario.sh threat`, alerts from the unmanaged source (not in ot-assets) break out
 #     as their own alert(s) instead of folding into the known-good group
 #   8 terraform destroy: MANUAL (run `terraform -chdir=infra destroy` and confirm the GuardDuty
@@ -24,7 +26,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 PLC_IP="${PLC_IP:-10.20.4.12}"
 WINDOW="${WINDOW:-60m}"
 RULE="$CONFIG_DIR/detection/claroty-suppressed-alert.json"
-STREAMS=(logs-claroty_ctd.event-default logs-fortinet_fortigate.log-default logs-ot_endpoint.events-default logs-usb_laundry.events-default logs-plc4x.telemetry-default logs-opcua.telemetry-default)
+STREAMS=(logs-claroty_ctd.event-default logs-fortinet_fortigate.log-default logs-ot_endpoint.events-default logs-meta_data_kiosk.log-default logs-plc4x.telemetry-default logs-opcua.telemetry-default)
 ALERTS_INDEX=".alerts-security.alerts-default"
 
 load_env
@@ -191,24 +193,24 @@ c9() {
   fi
 }
 
-# ---- 10 USB laundry provenance --------------------------------------------
+# ---- 10 Meta Data Kiosk provenance --------------------------------------------
 c10() {
   local n
-  n="$(count logs-usb_laundry.events-default '{"query":{"bool":{"filter":[{"term":{"event.action":"file_released"}},{"term":{"usb_laundry.released_to":"KPP-ENG-WS01"}},{"term":{"usb_laundry.scan_verdict":"clean"}}]}}}')"
+  n="$(count logs-meta_data_kiosk.log-default '{"query":{"bool":{"filter":[{"term":{"event.code":"100000"}},{"term":{"file.name":"TurbineGovernor_v14.zap18"}},{"term":{"meta_data_kiosk.scan_result":"Allowed"}}]}}}')"
   if [[ ${n:-0} -ge 1 ]]; then
-    record 10 "USB laundry provenance" PASS "$n clean file release(s) to KPP-ENG-WS01 in logs-usb_laundry.events-default"
+    record 10 "Meta Data Kiosk provenance" PASS "$n allowed scan(s) of TurbineGovernor_v14.zap18 in logs-meta_data_kiosk.log-default"
   else
-    record 10 "USB laundry provenance" FAIL "no clean file_released event to KPP-ENG-WS01 (run ./scripts/run-scenario.sh scenario)"
+    record 10 "Meta Data Kiosk provenance" FAIL "no allowed (100000) kiosk scan of TurbineGovernor_v14.zap18 (run ./scripts/run-scenario.sh scenario)"
   fi
 }
 
 # ---- 11 sample Defender and ServiceNow data ---------------------------------
 c11() {
   local d n
-  d="$(count logs-microsoft_defender_endpoint.log-default '{"query":{"term":{"labels.asset_name":"KPP-ENG-WS01"}}}')"
+  d="$(count logs-microsoft_defender_endpoint.log-default '{"query":{"term":{"host.name":"kpp-eng-ws01"}}}')"
   n="$(count logs-servicenow.event-default '{"query":{"term":{"servicenow.event.number.value":"INC0010231"}}}')"
   if [[ ${d:-0} -ge 1 && ${n:-0} -ge 1 ]]; then
-    record 11 "Sample Defender and ServiceNow data" PASS "$d Defender alert(s) for KPP-ENG-WS01, $n ServiceNow update(s) for INC0010231 (sample data, integrations not configured)"
+    record 11 "Sample Defender and ServiceNow data" PASS "$d Defender alert(s) for KPP-ENG-WS01, $n ServiceNow update(s) for INC0010231 (sample data parsed by the real integration pipelines, integrations not configured)"
   else
     record 11 "Sample Defender and ServiceNow data" FAIL "Defender alerts=$d, ServiceNow updates=$n (run ./scripts/run-scenario.sh scenario)"
   fi
@@ -227,7 +229,36 @@ c12() {
   fi
 }
 
-c1; c2; c3; c4; c5; c6; c7; c9; c10; c11; c12
+# ---- 13 Claroty integration dashboards ----------------------------------------
+c13() {
+  local ev="logs-claroty_ctd.event-default" miss="" n cls
+  es POST "/$ev/_search" -d '{"size":0,"aggs":{"c":{"terms":{"field":"claroty_ctd.event.class_id","size":20}}}}' || true
+  cls="$(printf '%s' "$HTTP_BODY" | jq -r '[.aggregations.c.buckets[].key]|join(",")' 2>/dev/null)"
+  for c in Alert Event ActivityLog HealthCheck Insight; do [[ ",$cls," == *",$c,"* ]] || miss+="class:$c "; done
+  chk() { # label index must-exist-fields... : count of docs having all fields
+    local label=$1 idx=$2; shift 2
+    local f=() x; for x in "$@"; do f+=("{\"exists\":{\"field\":\"$x\"}}"); done
+    n="$(count "$idx" "{\"query\":{\"bool\":{\"filter\":[$(IFS=,; echo "${f[*]}")]}}}")"
+    [[ ${n:-0} -ge 1 ]] || miss+="$label "
+  }
+  chk alert-fields "$ev" event.risk_score network.protocol claroty_ctd.event.category claroty_ctd.event.source.zone claroty_ctd.event.alert.status claroty_ctd.event.device_external_id observer.hostname
+  chk health-fields "$ev" host.cpu.usage claroty_ctd.event.memory claroty_ctd.event.used.opt_icsranger claroty_ctd.event.used.var claroty_ctd.event.used.tmp claroty_ctd.event.unhandled_events
+  chk activity-fields "$ev" claroty_ctd.event.log_type claroty_ctd.event.action.status event.action user.name
+  chk event-fields "$ev" claroty_ctd.event.resolved.as claroty_ctd.event.category source.ip
+  chk insight-fields "$ev" claroty_ctd.event.is_ghost host.os.name event.severity
+  chk asset-fields logs-claroty_ctd.asset-default host.id device.manufacturer claroty_ctd.asset.risk_level claroty_ctd.asset.virtual_zone.name claroty_ctd.asset.asset_types.name claroty_ctd.asset.site_name
+  chk baseline-fields logs-claroty_ctd.baseline-default claroty_ctd.baseline.valid network.protocol claroty_ctd.baseline.source.entity.asset_name claroty_ctd.baseline.destination.entity.asset_name claroty_ctd.baseline.site_id
+  n="$(count "$ev" '{"query":{"term":{"claroty_ctd.event.is_ghost":true}}}')"; [[ ${n:-0} -ge 1 ]] || miss+="ghost-insight "
+  n="$(count logs-claroty_ctd.asset-default '{"query":{"term":{"claroty_ctd.asset.ghost":true}}}')"; [[ ${n:-0} -ge 1 ]] || miss+="ghost-asset "
+  n="$(count "logs-claroty_ctd.*" '{"query":{"exists":{"field":"error.message"}}}')"; [[ ${n:-0} -eq 0 ]] || miss+="ingest-errors($n) "
+  if [[ -z $miss ]]; then
+    record 13 "Claroty integration dashboard data" PASS "classes [$cls]; alert, health, activity, event, insight, asset and baseline fields present; ghost insight and asset present; no ingest errors"
+  else
+    record 13 "Claroty integration dashboard data" FAIL "missing: $miss(run the scenario and wait for noise, asset and baseline snapshots)"
+  fi
+}
+
+c1; c2; c3; c4; c5; c6; c7; c9; c10; c11; c12; c13
 
 jq -n --arg ts "$TS" --arg crit8 "manual: run terraform -chdir=infra destroy and confirm GuardDuty VPC cleanup" \
   --slurpfile r "$RES" '{timestamp:$ts,results:$r[0],criterion_8:$crit8}' >"$OUT"

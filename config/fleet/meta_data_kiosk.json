@@ -1,0 +1,28 @@
+{
+  "name": "meta-data-kiosk-ot-demo",
+  "description": "OPSWAT MetaDefender Kiosk (Meta Data Kiosk) BSD syslog over UDP on localhost:9514, parsed by the meta_data_kiosk ingest pipeline",
+  "namespace": "default",
+  "policy_ids": ["__POLICY_ID__"],
+  "package": {
+    "name": "udp",
+    "version": "__PACKAGE_VERSION__"
+  },
+  "inputs": {
+    "udp-udp": {
+      "enabled": true,
+      "streams": {
+        "udp.generic": {
+          "enabled": true,
+          "vars": {
+            "listen_address": "127.0.0.1",
+            "listen_port": 9514,
+            "data_stream.dataset": "meta_data_kiosk.log",
+            "pipeline": "meta_data_kiosk",
+            "use_logs_stream": false,
+            "tags": ["ot-demo", "meta-data-kiosk"]
+          }
+        }
+      }
+    }
+  }
+}

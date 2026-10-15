@@ -184,7 +184,7 @@ ensure_api_key() { # [force]
       "ot_demo": {
         "cluster": ["monitor", "manage_index_templates", "manage_ingest_pipelines"],
         "indices": [
-          {"names": ["logs-claroty_ctd.*","logs-fortinet_fortigate.*","logs-ot_endpoint.*","logs-usb_laundry.*","logs-microsoft_defender_endpoint.*","logs-servicenow.*","logs-plc4x.*","logs-opcua.*","ot-assets"],
+          {"names": ["logs-claroty_ctd.*","logs-fortinet_fortigate.*","logs-ot_endpoint.*","logs-meta_data_kiosk.*","logs-microsoft_defender_endpoint.*","logs-servicenow.*","logs-plc4x.*","logs-opcua.*","ot-assets"],
            "privileges": ["read","write","create_index","delete","view_index_metadata"]},
           {"names": [".alerts-security.alerts-*",".internal.alerts-security.alerts-*",".siem-signals-*"],
            "privileges": ["read","write","delete","view_index_metadata","maintenance"]}

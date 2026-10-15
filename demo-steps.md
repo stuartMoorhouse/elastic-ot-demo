@@ -7,7 +7,7 @@ Target length: 12 minutes, with the triage itself taking about 3 minutes.
 | Pain point | Where it is shown |
 |---|---|
 | Alert noise is overwhelming, and the team assumes it cannot be reduced | Steps 5 and 6: about a thousand duplicate alerts become a handful of incidents, every raw event is still available, and a real threat is not hidden in the noise |
-| Slow, fragmented triage across Claroty, firewall, endpoint and USB laundry logs | Steps 3, 4 and 8: one place to see the alert, firewall rule hit, endpoint activity, USB laundry trail, asset metadata, the Defender verdict and the ServiceNow ticket status |
+| Slow, fragmented triage across Claroty, firewall, endpoint and Meta Data Kiosk logs | Steps 3, 4 and 8: one place to see the alert, firewall rule hit, endpoint activity, Meta Data Kiosk trail, asset metadata, the Defender verdict and the ServiceNow ticket status |
 
 ## Before the customer joins
 
@@ -22,7 +22,7 @@ Target length: 12 minutes, with the triage itself taking about 3 minutes.
 ### 1. Set the scene (1 min)
 
 Say: "It is Monday morning. Claroty flags a suspected anomaly against a PLC at Karins Power Plant.
-Normally you would check Claroty, the firewall logs, the endpoint tools and the USB laundry one by one.
+Normally you would check Claroty, the firewall logs, the endpoint tools and the Meta Data Kiosk one by one.
 Here it is all in one place."
 
 ### 2. Trigger the alert burst (1 min)
@@ -47,10 +47,10 @@ Open **Asset and Firewall Context** for KPP-PLC-T2 and KPP-ENG-WS01:
 - FortiGate: the policy that was hit, "ENG-to-PLC-S7".
 - Related endpoint events: authorised engineer logon, TIA Portal process.
 - Process impact check: Turbine 2 speed and vibration (PLC4X S7 sample telemetry) stay flat through the change.
-- USB laundry trail: seven minutes earlier the engineer scanned `TurbineGovernor_v14.zap18` at the kiosk (clean) and
-  released it to this workstation.
+- Meta Data Kiosk trail: seven minutes earlier the engineer scanned `TurbineGovernor_v14.zap18` at the kiosk
+  (event code 100000, allowed) before it reached this workstation.
 
-Say: "That is four sources, Claroty, the firewall, the endpoint and the USB laundry, in one view, with no query
+Say: "That is four sources, Claroty, the firewall, the endpoint and the Meta Data Kiosk, in one view, with no query
 writing. These panels were built by picking fields."
 
 ### 4. Confirm it is a known good device (1 min)
@@ -59,6 +59,17 @@ On the asset panel, show that KPP-ENG-WS01 is flagged known good with a Monday m
 
 Say: "This lookup against our asset list is asset management: it tells us this workstation is authorised for this
 PLC and when it is allowed to change it."
+
+### Optional: Claroty's own dashboards (1 min)
+
+Open the **[Logs Claroty CTD]** dashboards that ship with the integration, and set the site filter to Karins Power Plant:
+- Overview and Alerts: alert, event and baseline counts, alerts by category, protocol, source zone and risk score.
+- Asset: the eight assets by Purdue-level zone and type, including one ghost asset (the unmanaged host).
+- Insights: insights by ghost type. The unmanaged host's communication with the PLC shows as a ghost insight.
+- Health Check: the CTD sensor's CPU, memory and disk usage.
+
+Say: "These come with the Claroty integration and fill in the same way from your real Claroty data. Here they show our
+synthetic Claroty feed."
 
 ### 5. Show alert grouping, and that nothing is discarded (2 min)
 
@@ -79,7 +90,7 @@ T0843 Program Download. Here the maintenance window, the authorised logon and th
 Open Security > Alerts, or **Asset and Firewall Context**. Show the second source in the alerts-by-source table.
 
 Say: "Now a different source. This host is UNKNOWN, it is not in the asset inventory. It has no endpoint telemetry and
-no USB laundry trail, it came in through a different firewall policy, Contractor-VPN-to-OT, and the severity is higher.
+no Meta Data Kiosk trail, it came in through a different firewall policy, Contractor-VPN-to-OT, and the severity is higher.
 Because we group by source, it breaks out as its own alert instead of disappearing into the noise."
 
 Scroll to the process impact check panels on **Asset and Firewall Context**.
@@ -135,15 +146,20 @@ Run `terraform -chdir=infra destroy` when finished to stop AWS and Elastic Cloud
 - No second source in step 6: run `./scripts/run-scenario.sh threat` and wait a minute.
 - No turbine speed excursion in step 6: noise must be on (`./scripts/run-scenario.sh noise on`) when you run `threat`. The setpoint drift lasts 5 minutes and then reverts, so run `threat` at the start of step 5.
 - No Defender or ServiceNow rows: run `./scripts/run-scenario.sh scenario` again.
+- Claroty Asset or Baseline dashboard, or the Defender and ServiceNow panels, empty: run `./scripts/load-api-data.sh`.
 - No USB trail: run `./scripts/run-scenario.sh scenario` again; the trail is written 7 minutes before the burst.
 - Check generator state: `./scripts/run-scenario.sh status`.
 
 ## Notes
 
-- All data is synthetic. The USB laundry log format is a placeholder until a sample from the customer's kiosk is available.
+- The Claroty alert, event, activity log, health and insight lines are synthetic CEF through the real integration, so its
+  dashboards populate. The asset inventory and baseline are loaded by `scripts/load-api-data.sh` (run automatically by
+  the scenario) because the real integration pulls them through the Claroty API. Alert category strings are approximate.
+- All data is synthetic. The Meta Data Kiosk (OPSWAT MetaDefender Kiosk) syslog header follows the OPSWAT documentation, but the JSON message bodies for file, session and device events are assumed. Validate against a real export from the customer's kiosk. No dedicated Elastic integration exists, so it uses Custom UDP Logs plus the `meta_data_kiosk` ingest pipeline.
 - The PLC telemetry (PLC4X S7 driver for the turbine PLC, an OPC UA client for the substation RTU) is sample data in the
   shape those collectors produce. There is no dedicated Elastic integration for them here; in practice they ship through
   Logstash, Kafka or Agent. The data goes to `logs-plc4x.telemetry-default` and `logs-opcua.telemetry-default`.
-- The Defender and ServiceNow data is sample data with the real integrations' field names, written to streams named like
-  the real datasets. Neither integration is configured. If the real integrations are installed later, their templates and
-  pipelines apply to the same stream names.
+- The Defender and ServiceNow data is sample data. The real Microsoft Defender for Endpoint and ServiceNow integrations are
+  installed and parse it, but they are not configured against a tenant or instance, so the sample records are loaded by
+  `scripts/load-api-data.sh` (run by the scenario) instead of being pulled from the vendors' APIs. Defender host names appear
+  in lower case, as the integration produces them.

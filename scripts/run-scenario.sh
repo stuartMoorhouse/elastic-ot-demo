@@ -4,7 +4,7 @@
 #   run-scenario.sh backfill [HOURS]     (default 24)
 #   run-scenario.sh scenario             (Karins false-positive storyline)
 #   run-scenario.sh threat               (contrast: unmanaged source, not in inventory)
-#   run-scenario.sh ticket-close         (sample ServiceNow incident closed after the case is closed)
+#   run-scenario.sh ticket-close         (close the sample ServiceNow incident, after the case is closed)
 #   run-scenario.sh status
 # SSH details come from terraform outputs (ssh_command, or ec2_public_ip + infra/*.pem).
 # Override with OT_SSH_CMD="ssh -i key.pem ubuntu@1.2.3.4".
@@ -55,6 +55,7 @@ case "$action" in
     env_set scenario_triggered_at "$(now_epoch)"
     log "triggering scenario at $(date -u +%FT%TZ)"
     remote "sudo python3 $GEN --mode scenario"
+    "$LIB_DIR/load-api-data.sh" api-data
     env_set demo_executed true json
     log "scenario sent; demo_executed=true"
     ;;
@@ -64,7 +65,7 @@ case "$action" in
     log "threat scenario sent"
     ;;
   ticket-close)
-    remote "sudo python3 $GEN --mode ticket-close"
+    "$LIB_DIR/load-api-data.sh" ticket-close
     log "sample ServiceNow incident closed"
     ;;
   status)

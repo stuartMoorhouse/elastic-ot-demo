@@ -9,11 +9,11 @@ Nothing here has been applied to a cluster. Target: Elastic Cloud 9.5. All reque
 | fleet/claroty_ctd.json | Claroty CTD package policy, TCP 127.0.0.1:9100 | `POST /api/fleet/package_policies` |
 | fleet/fortinet_fortigate.json | FortiGate package policy, UDP 127.0.0.1:9004 | `POST /api/fleet/package_policies` |
 | fleet/ot_endpoint_logs.json | Custom Logs (Filestream) policy, `/var/log/ot-demo/endpoint.ndjson`, ndjson parser, dataset `ot_endpoint.events` | `POST /api/fleet/package_policies` |
-| fleet/usb_laundry_logs.json | Custom Logs (Filestream) policy, `/var/log/ot-demo/usb_laundry.ndjson`, dataset `usb_laundry.events` (synthetic kiosk schema, placeholder) | `POST /api/fleet/package_policies` |
-| fleet/defender_logs.json | SAMPLE Defender for Endpoint alerts, filestream policy, `/var/log/ot-demo/defender.ndjson`, dataset `microsoft_defender_endpoint.log` (real integration not configured) | `POST /api/fleet/package_policies` |
-| fleet/servicenow_logs.json | SAMPLE ServiceNow incident events, filestream policy, `/var/log/ot-demo/servicenow.ndjson`, dataset `servicenow.event` (real integration not configured) | `POST /api/fleet/package_policies` |
+| fleet/meta_data_kiosk.json | Custom UDP Logs policy, UDP 127.0.0.1:9514, dataset `meta_data_kiosk.log`, pipeline `meta_data_kiosk` (OPSWAT MetaDefender Kiosk BSD syslog, message bodies assumed) | `POST /api/fleet/package_policies` |
+| pipelines/meta_data_kiosk.json | Ingest pipeline: parses `eventCode`, `logType`, host and JSON message, maps to ECS | `PUT /_ingest/pipeline/meta_data_kiosk` |
 | fleet/plc4x_telemetry.json | SAMPLE turbine PLC telemetry (PLC4X S7 shape), filestream policy, `/var/log/ot-demo/plc4x.ndjson`, dataset `plc4x.telemetry` | `POST /api/fleet/package_policies` |
 | fleet/opcua_telemetry.json | SAMPLE substation values (OPC UA client shape), filestream policy, `/var/log/ot-demo/opcua.ndjson`, dataset `opcua.telemetry` | `POST /api/fleet/package_policies` |
+| (none) Claroty asset and baseline, Defender alerts, ServiceNow incidents | Loaded by `scripts/load-api-data.sh` as bulk requests into the real integrations' own data streams (`logs-claroty_ctd.asset-default`, `logs-claroty_ctd.baseline-default`, `logs-microsoft_defender_endpoint.log-default`, `logs-servicenow.event-default`) as raw API JSON, parsed by each integration's ingest pipeline. The Defender and ServiceNow packages are installed by `configure.sh` but have no policy (no tenant or instance). A Fleet filestream policy cannot write into another package's data stream without a force flag that would overwrite its template. | `POST /_bulk` |
 | detection/claroty-suppressed-alert.json | Query rule with alert suppression | `POST /api/detection_engine/rules` |
 | cases/case-template.json | Body for the grouped-alert case | `POST /api/cases` |
 | dashboards/ot-dashboards.ndjson | 3 data views + 3 dashboards (legacy saved objects) | `POST /api/saved_objects/_import` |

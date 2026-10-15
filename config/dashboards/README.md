@@ -16,4 +16,4 @@ Exactly 3 dashboards exist in either path (limit is 4). Use one path only, not b
 - Dashboard 3 reads `.alerts-security.alerts-default` (hidden index) and the rule name `OT - Claroty CTD alert (suppressed by asset and signature)`; they show data only after the detection rule has produced alerts.
 - The panels reference the Claroty data view in the Lens `textBased` state for all panels; ES|QL ignores it for the query, but verify in the UI.
 
-Note: `api/*.json` is a fallback in the Dashboards API format. It was updated for the Purdue rename only and is not kept in sync with later panel additions (raw-event drill-down, source known-good check, USB laundry trail). Use `ot-dashboards.ndjson`.
+Note: `api/*.json` is a fallback in the Dashboards API format. It was updated for the Purdue rename only and is not kept in sync with later panel additions (raw-event drill-down, source known-good check, Meta Data Kiosk trail). Use `ot-dashboards.ndjson`.

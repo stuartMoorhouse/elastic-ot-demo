@@ -6,6 +6,7 @@ exec > >(tee -a /var/log/user-data.log) 2>&1
 # and targeted by the generator (scripts/generator/ot_generator.py):
 #   Claroty CTD CEF syslog   TCP 127.0.0.1:9100
 #   FortiGate syslog         UDP 127.0.0.1:9004
+#   Meta Data Kiosk syslog   UDP 127.0.0.1:9514
 #   Endpoint events NDJSON   /var/log/ot-demo/endpoint.ndjson
 
 export DEBIAN_FRONTEND=noninteractive
