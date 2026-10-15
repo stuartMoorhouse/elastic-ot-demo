@@ -3,7 +3,7 @@
 variable "region" {
   description = "AWS region"
   type        = string
-  default     = "us-east-1"
+  default     = "eu-west-2"
 }
 
 variable "aws_profile" {
@@ -27,7 +27,7 @@ variable "stack_version_regex" {
 variable "ec_region" {
   description = "Elastic Cloud region"
   type        = string
-  default     = "aws-us-east-1"
+  default     = "eu-west-1"
 }
 
 variable "ec_deployment_template_id" {
@@ -45,7 +45,7 @@ variable "es_size" {
 variable "kibana_size" {
   description = "Kibana size"
   type        = string
-  default     = "1g"
+  default     = "16g"
 }
 
 variable "integrations_server_size" {
@@ -68,4 +68,10 @@ variable "instance_arch" {
     condition     = contains(["arm64", "amd64"], var.instance_arch)
     error_message = "instance_arch must be arm64 or amd64."
   }
+}
+
+variable "aws_tags" {
+  description = "Default tags applied to all AWS resources (organisation-mandated)"
+  type        = map(string)
+  default     = {}
 }

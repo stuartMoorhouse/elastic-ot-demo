@@ -31,9 +31,10 @@ resource "aws_internet_gateway" "main" {
 }
 
 resource "aws_subnet" "public" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.50.1.0/24"
-  availability_zone       = data.aws_availability_zones.available.names[0]
+  vpc_id     = aws_vpc.main.id
+  cidr_block = "10.50.1.0/24"
+  # Index 1: eu-west-2a had no t4g.small capacity (InsufficientInstanceCapacity).
+  availability_zone       = data.aws_availability_zones.available.names[1]
   map_public_ip_on_launch = false # public IP assigned explicitly on the instance
   tags                    = { Name = "${var.prefix}-public" }
 }

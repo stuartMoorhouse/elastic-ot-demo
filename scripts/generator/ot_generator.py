@@ -64,13 +64,16 @@ def claroty_line(ts, sig_id, name, sev, src, dst, proto="S7Comm"):
     ext = {
         "rt": int(t.timestamp() * 1000), "src": src, "dst": dst,
         "shost": NAME_BY_IP.get(src, src), "dhost": NAME_BY_IP.get(dst, dst),
+        "CtdSourceIp": src, "CtdDestinationIp": dst,
+        "CtdSourceHost": NAME_BY_IP.get(src, src), "CtdDestinationHost": NAME_BY_IP.get(dst, dst),
         "proto": proto, "cat": "Security", "cs1Label": "site", "cs1": SITE,
         "cs2Label": "zone", "cs2": "Level 1 Control", "cn1Label": "alert_id",
         "cn1": random.randint(100000, 999999),
+        "CtdAlertId": random.randint(100000, 999999),
         "msg": name + " between %s and %s" % (NAME_BY_IP.get(src, src), NAME_BY_IP.get(dst, dst)),
     }
     body = " ".join("%s=%s" % (k, cef_escape(v)) for k, v in ext.items())
-    return "<134>%s ctd-kpp CEF:0|Claroty|CTD|4.12.0|%s|%s|%d|%s" % (
+    return "<134>%s ctd-kpp CEF:0|Claroty|CTD|4.12.0|Alert-%s|%s|%d|%s" % (
         t.strftime("%b %d %H:%M:%S"), sig_id, name, sev, body)
 
 
@@ -103,7 +106,8 @@ def ep_doc(ts, host, category, action, user=None, proc=None, src=None, dst=None,
                   "kind": "event", "dataset": "ot_endpoint.events"},
         "host": {"name": host, "ip": [ASSETS[host]], "os": {"family": "windows"}},
         "data_stream": {"type": "logs", "dataset": "ot_endpoint.events", "namespace": "default"},
-        "labels": {"site": SITE, "demo": "ot-demo"},
+        # Agent host metadata overwrites host.*, so carry the OT asset name in a label too.
+        "labels": {"site": SITE, "demo": "ot-demo", "asset_name": host},
     }
     if user:
         d["user"] = {"name": user, "domain": "KPP"}

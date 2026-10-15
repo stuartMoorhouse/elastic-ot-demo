@@ -16,6 +16,10 @@ terraform {
 provider "aws" {
   region  = var.region
   profile = var.aws_profile
+
+  default_tags {
+    tags = var.aws_tags
+  }
 }
 
 # Authenticates via the EC_API_KEY environment variable.
@@ -55,7 +59,7 @@ data "ec_stack" "latest" {
 }
 
 resource "ec_deployment" "main" {
-  name                   = "${var.prefix}-ot-demo"
+  name                   = "elastic-ot-demo"
   region                 = var.ec_region
   version                = data.ec_stack.latest.version
   deployment_template_id = var.ec_deployment_template_id

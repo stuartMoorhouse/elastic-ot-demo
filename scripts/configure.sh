@@ -44,7 +44,7 @@ else
     es POST "/ot-assets/_delete_by_query?refresh=true&conflicts=proceed" -d '{"query":{"match_all":{}}}'
     require_2xx "clear ot-assets"
   fi
-  es POST "/_bulk?refresh=true" -H 'Content-Type: application/x-ndjson' --data-binary "@$A_BULK"
+  es POST "/ot-assets/_bulk?refresh=true" -H 'Content-Type: application/x-ndjson' --data-binary "@$A_BULK"
   require_2xx "bulk load assets"
   [[ "$(printf '%s' "$HTTP_BODY" | jq -r '.errors')" == false ]] || die "bulk load reported item errors: $(printf '%s' "$HTTP_BODY" | head -c 600)"
   log "loaded $expected assets"

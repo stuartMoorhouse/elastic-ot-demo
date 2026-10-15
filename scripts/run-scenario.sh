@@ -25,6 +25,8 @@ ssh_cmd_array() {
     [[ -n $ip && -n $key ]] || die "no ssh_command output and no ec2_public_ip + infra/*.pem; deploy infra/ first or set OT_SSH_CMD"
     cmd="ssh -i $key ubuntu@$ip"
   fi
+  # terraform's ssh_command uses a key path relative to infra/
+  cmd="${cmd//-i .\//-i $INFRA_DIR/}"
   # shellcheck disable=SC2206
   SSH=($cmd -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o BatchMode=yes)
 }

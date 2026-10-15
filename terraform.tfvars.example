@@ -1,16 +1,25 @@
 # Copy to infra/terraform.tfvars (gitignored) and adjust. Keep in sync with infra/variables.tf.
 # Secrets are never set here: use EC_API_KEY (Elastic Cloud) and the "company" AWS profile.
-region      = "us-east-1"
+region      = "eu-west-2"
 aws_profile = "company"
 prefix      = "elastic-demo"
 
 stack_version_regex       = "9\\.5\\.\\d+"
-ec_region                 = "aws-us-east-1"
+ec_region                 = "eu-west-1"
 ec_deployment_template_id = "aws-storage-optimized"
 es_size                   = "2g"
-kibana_size               = "1g"
+kibana_size               = "16g"
 integrations_server_size  = "1g"
 
 # arm64 -> t4g.*, amd64 -> t3.*
 instance_type = "t4g.small"
 instance_arch = "arm64"
+
+# Organisation-mandated AWS tags (applied via provider default_tags). Update keep-until for each deploy.
+aws_tags = {
+  division   = "field"
+  org        = "sa"
+  keep-until = "2026-10-29"
+  team       = "emea_north_area"
+  project    = "stuartmoorhouse"
+}

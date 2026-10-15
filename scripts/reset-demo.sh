@@ -3,7 +3,7 @@
 #   reset-demo.sh [--keep-data] [--rerun]
 # - deletes cases tagged "ot-demo" (falls back to nothing destructive beyond that tag)
 # - deletes the demo detection-rule alerts (falls back to closing them)
-# - deletes all documents in the three demo data streams (skip with --keep-data)
+# - deletes the three demo data streams (skip with --keep-data); they are recreated on next write
 # - sets demo_executed=false; with --rerun triggers the scenario again afterwards
 set -euo pipefail
 # shellcheck source=lib.sh
@@ -31,9 +31,9 @@ kb GET "/api/cases/_find?tags=ot-demo&perPage=100" || die "Kibana unreachable"
 require_2xx "find demo cases"
 ids="$(printf '%s' "$HTTP_BODY" | jq -r '.cases[].id')"
 if [[ -n $ids ]]; then
-  q=""
-  while IFS= read -r id; do q+="ids=$id&"; done <<<"$ids"
-  kb DELETE "/api/cases?${q%&}"
+  # Cases API takes ids as a JSON array in the query string
+  q="$(printf '%s\n' "$ids" | jq -Rsc 'split("\n") | map(select(length>0))' | jq -sRr '@uri')"
+  kb DELETE "/api/cases?ids=$q"
   require_2xx "delete demo cases"
   log "deleted $(wc -l <<<"$ids" | tr -d ' ') demo case(s)"
 else
@@ -54,8 +54,9 @@ fi
 # ---- data ----------------------------------------------------------------
 if [[ $KEEP_DATA -eq 0 ]]; then
   for s in "${STREAMS[@]}"; do
-    if es POST "/$s/_delete_by_query?refresh=true&conflicts=proceed" -d '{"query":{"match_all":{}}}' && is_2xx; then
-      log "$s: deleted $(printf '%s' "$HTTP_BODY" | jq -r '.deleted') doc(s)"
+    # Drop the data stream (instant); the integration index template recreates it on the next write.
+    if es DELETE "/_data_stream/$s" && is_2xx; then
+      log "$s: data stream deleted"
     elif [[ $HTTP_CODE == 404 ]]; then
       log "$s: not present, skipping"
     else

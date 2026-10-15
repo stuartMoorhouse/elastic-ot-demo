@@ -186,7 +186,7 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM logs-ot_endpoint.events-* | WHERE host.name == \"KPP-ENG-WS01\" | SORT @timestamp DESC | LIMIT 20 | KEEP @timestamp, host.name, event.category, event.action, user.name, process.name"
+          "query": "FROM logs-ot_endpoint.events-* | WHERE labels.asset_name == \"KPP-ENG-WS01\" | SORT @timestamp DESC | LIMIT 20 | KEEP @timestamp, labels.asset_name, event.category, event.action, user.name, process.name"
         },
         "metrics": [],
         "rows": [
@@ -194,7 +194,7 @@
             "column": "@timestamp"
           },
           {
-            "column": "host.name"
+            "column": "labels.asset_name"
           },
           {
             "column": "event.category"

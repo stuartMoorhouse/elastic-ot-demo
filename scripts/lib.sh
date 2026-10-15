@@ -117,7 +117,7 @@ _auth_cfg() { # curl config on stdout (consumed via process substitution)
 _call() {
   local base=$1 method=$2 path=$3 a json=1 rc=0
   shift 3
-  for a in "$@"; do [[ $a == -F || $a == --form ]] && json=0; done
+  for a in "$@"; do [[ $a == -F || $a == --form || $a == [Cc]ontent-[Tt]ype:* ]] && json=0; done
   local hdrs=(-H 'kbn-xsrf: true' -H 'x-elastic-internal-origin: ot-demo')
   [[ $json -eq 1 ]] && hdrs+=(-H 'Content-Type: application/json')
   local cfg
@@ -185,7 +185,7 @@ ensure_api_key() { # [force]
         "cluster": ["monitor", "manage_index_templates", "manage_ingest_pipelines"],
         "indices": [
           {"names": ["logs-claroty_ctd.*","logs-fortinet_fortigate.*","logs-ot_endpoint.*","ot-assets"],
-           "privileges": ["read","write","create_index","delete","view_index_metadata"]},
+           "privileges": ["read","write","create_index","delete","delete_index","view_index_metadata"]},
           {"names": [".alerts-security.alerts-*",".internal.alerts-security.alerts-*",".siem-signals-*"],
            "privileges": ["read","write","delete","view_index_metadata","maintenance"]}
         ],

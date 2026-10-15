@@ -79,7 +79,7 @@ c3() {
   local fg ep ru
   if ! dashboards; then record 3 "Unified OT dashboard" FAIL "cannot list dashboards (HTTP $HTTP_CODE)"; return; fi
   fg="$(count logs-fortinet_fortigate.log-default "{\"query\":{\"bool\":{\"filter\":[{\"term\":{\"destination.ip\":\"$PLC_IP\"}},{\"exists\":{\"field\":\"rule.name\"}}]}}}")"
-  ep="$(count logs-ot_endpoint.events-default "{\"query\":{\"bool\":{\"should\":[{\"term\":{\"destination.ip\":\"$PLC_IP\"}},{\"term\":{\"source.ip\":\"$PLC_IP\"}}],\"minimum_should_match\":1}}}")"
+  ep="$(count logs-ot_endpoint.events-default "{\"query\":{\"term\":{\"labels.asset_name\":\"KPP-ENG-WS01\"}}}")"
   ru="$(count logs-fortinet_fortigate.log-default "{\"query\":{\"term\":{\"rule.name\":\"ENG-to-PLC-S7\"}}}")"
   if [[ ${DASH_COUNT:-0} -ge 1 && $fg != ERR && $ep != ERR && $fg -ge 1 && $ep -ge 1 ]]; then
     record 3 "Unified OT dashboard" PASS "dashboards=[$DASH_TITLES]; PLC firewall docs=$fg (ENG-to-PLC-S7 hits=$ru), endpoint docs=$ep"

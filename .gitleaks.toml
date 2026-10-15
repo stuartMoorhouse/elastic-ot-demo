@@ -8,4 +8,5 @@ paths = [
   '''.*\.tfstate\.backup$''',
   '''.*\.tfplan$''',
   '''.*\.pem$''',
+  '''shared/env\.json$''',
 ]
