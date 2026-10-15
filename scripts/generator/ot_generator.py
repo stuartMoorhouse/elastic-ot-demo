@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import socket
 import sys
 import time
@@ -298,6 +299,177 @@ def fgt_line(ts, flow, action="accept", level="notice"):
     return "<189>" + " ".join("%s=%s" % kv_ for kv_ in kv)
 
 
+# Real public addresses so the pipeline's GeoIP and ASN lookups resolve (source/destination geo and organization).
+# (ip, FortiGate country name)
+ATTACKERS = [
+    ("185.220.101.34", "Germany"), ("45.155.205.233", "Russian Federation"), ("61.177.172.140", "China"),
+    ("218.92.0.107", "China"), ("89.248.165.52", "Netherlands"), ("80.82.77.139", "Netherlands"),
+    ("162.142.125.10", "United States"), ("141.98.11.37", "Lithuania"), ("91.240.118.172", "Russian Federation"),
+    ("1.234.83.11", "Korea, Republic of"), ("200.98.137.100", "Brazil"), ("103.203.57.4", "India"),
+    ("5.188.62.76", "Russian Federation"), ("198.235.24.130", "United States"),
+]
+CLOUD = [
+    ("8.8.8.8", "United States", "DNS", 53, 17), ("13.107.42.14", "United States", "HTTPS", 443, 6),
+    ("52.84.150.10", "United States", "HTTPS", 443, 6), ("104.18.32.47", "United States", "HTTPS", 443, 6),
+    ("17.253.144.10", "United States", "HTTPS", 443, 6), ("85.10.240.250", "Germany", "HTTPS", 443, 6),
+    ("193.99.144.85", "Germany", "HTTPS", 443, 6), ("1.1.1.1", "Australia", "DNS", 53, 17),
+    ("129.6.15.28", "United States", "NTP", 123, 17),
+]
+PROBE_PORTS = [("RDP", 3389), ("SSH", 22), ("TELNET", 23), ("S7", 102), ("MODBUS", 502), ("SMB", 445),
+               ("HTTP", 80), ("HTTPS", 443)]
+IPS_SIGS = [  # (attack, attackid, severity, service, port)
+    ("S7.Comm.PLC.Stop.CPU", 59390, "critical", "S7", 102), ("Modbus.TCP.Write.Multiple.Coils", 52318, "high", "MODBUS", 502),
+    ("MS.RDP.BlueKeep.Remote.Code.Execution", 49010, "critical", "RDP", 3389),
+    ("SSH.Brute.Force.Login", 38292, "medium", "SSH", 22), ("Siemens.SIMATIC.S7.Buffer.Overflow", 55971, "high", "S7", 102),
+    ("Telnet.Login.Brute.Force", 12053, "medium", "TELNET", 23), ("HTTP.URI.SQL.Injection", 15622, "high", "HTTP", 80),
+    ("DNP3.Unsolicited.Response.Flood", 56007, "high", "DNP3", 20000),
+]
+WEB_BLOCKS = [("update-cdn-secure.top", "/dl/patch.exe", "Malicious Websites", 26),
+              ("free-vpn-proxy.net", "/", "Proxy Avoidance", 59), ("kpp-portal-login.xyz", "/signin", "Phishing", 61),
+              ("cdn.torrent-tracker.org", "/announce", "Peer-to-peer File Sharing", 40),
+              ("onedrive-share-docs.ru", "/view", "Phishing", 61)]
+VIRUS_NAMES = [("W32/Agent.ZX!tr", "setup_update.exe"), ("EICAR_TEST_FILE", "eicar.com"),
+               ("W32/Kryptik.HNT!tr", "TurbineGovernor_patch.zip"), ("VBA/Agent.TD!tr", "shift_report.xlsm")]
+APP_BLOCKS = [("BitTorrent", "P2P", "high"), ("TeamViewer", "Remote.Access", "elevated"),
+              ("AnyDesk", "Remote.Access", "elevated"), ("Tor", "Proxy", "critical"), ("Dropbox", "Storage.Backup", "medium")]
+VPN_USERS = ["contractor.hale", "vendor.siemens", "a.lindqvist", "m.virtanen", "admin", "svc_backup", "j.smith"]
+
+
+IPV4 = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
+
+
+def fgt_event(ts, logid, typ, subtype, level, extra):
+    t = utc(ts)
+    kv = [("date", t.strftime("%Y-%m-%d")), ("time", t.strftime("%H:%M:%S")),
+          ("devname", '"%s"' % DEVNAME), ("devid", '"%s"' % DEVID), ("eventtime", int(ts * 1e9)), ("tz", '"+0000"'),
+          ("logid", '"%s"' % logid), ("type", '"%s"' % typ), ("subtype", '"%s"' % subtype),
+          ("level", '"%s"' % level), ("vd", '"root"')]
+    for k, v in extra:
+        kv.append((k, v if not isinstance(v, str) or IPV4.match(v) else '"%s"' % v))
+    return "<188>" + " ".join("%s=%s" % kv_ for kv_ in kv)
+
+
+def _fgt_flow(src, sport, sif, srole, dst, dif, drole, dport, proto, svc, extra_country=None):
+    kv = [("srcip", src), ("srcport", sport), ("srcintf", sif), ("srcintfrole", srole)]
+    if extra_country:
+        kv.append(("srccountry", extra_country))
+    kv += [("dstip", dst), ("dstport", dport), ("dstintf", dif), ("dstintfrole", drole)]
+    return kv
+
+
+def fgt_external(ts):
+    """Internet-facing traffic, UTM detections and device events so the FortiGate overview has failures and geography."""
+    r = random.random() * 100
+    internal = random.choice([PLC, HMI, ENG, HIST, RTU, FGT])
+    atk, atk_c = random.choice(ATTACKERS)
+    sess = random.randint(1000000, 9999999)
+    if r < 24:  # inbound probe, denied at the WAN
+        svc, dport = random.choice(PROBE_PORTS)
+        return fgt_event(ts, "0000000013", "traffic", "forward", "warning", _fgt_flow(
+            atk, random.randint(1024, 65000), "port1", "wan", internal, "port3", "lan", dport, 6, svc, atk_c) + [
+            ("sessionid", sess), ("proto", 6), ("action", "deny"), ("policyid", 0), ("policytype", "policy"),
+            ("policyname", "Implicit Deny"), ("service", svc), ("trandisp", "noop"), ("duration", 0),
+            ("sentbyte", 0), ("rcvdbyte", 0), ("sentpkt", 1), ("rcvdpkt", 0), ("crscore", 30), ("craction", 131072),
+            ("crlevel", "high")])
+    if r < 46:  # outbound to the internet (updates, DNS, NTP, cloud)
+        ip, c, svc, dport, proto = random.choice(CLOUD)
+        src = random.choice([HIST, ENG, HMI])
+        denied = random.random() < 0.08
+        sent, rcvd = random.randint(200, 8000), random.randint(500, 90000)
+        return fgt_event(ts, "0000000013", "traffic", "forward", "warning" if denied else "notice", [
+            ("srcip", src), ("srcport", random.randint(40000, 60000)), ("srcintf", "port2"), ("srcintfrole", "lan"),
+            ("dstip", ip), ("dstcountry", c), ("dstport", dport), ("dstintf", "port1"), ("dstintfrole", "wan"),
+            ("sessionid", sess), ("proto", proto), ("action", "deny" if denied else "accept"), ("policyid", 20),
+            ("policytype", "policy"), ("policyname", "OT-Outbound-Updates"), ("service", svc),
+            ("trandisp", "snat"), ("duration", random.randint(1, 120)), ("sentbyte", 0 if denied else sent),
+            ("rcvdbyte", 0 if denied else rcvd), ("sentpkt", 1 if denied else sent // 100 + 1),
+            ("rcvdpkt", 0 if denied else rcvd // 100 + 1)])
+    if r < 54:  # implicit deny of an internal host trying something it should not
+        src = random.choice([ENG, HMI, HIST])
+        ip, c, svc, dport, proto = random.choice(CLOUD)
+        return fgt_event(ts, "0000000013", "traffic", "forward", "warning", [
+            ("srcip", src), ("srcport", random.randint(40000, 60000)), ("srcintf", "port2"), ("srcintfrole", "lan"),
+            ("dstip", ip), ("dstcountry", c), ("dstport", 25), ("dstintf", "port1"), ("dstintfrole", "wan"),
+            ("sessionid", sess), ("proto", 6), ("action", "deny"), ("policyid", 0), ("policytype", "policy"),
+            ("policyname", "Implicit Deny"), ("service", "SMTP"), ("trandisp", "noop"), ("duration", 0),
+            ("sentbyte", 0), ("rcvdbyte", 0)])
+    if r < 64:  # IPS signature hit
+        attack, aid, sev, svc, dport = random.choice(IPS_SIGS)
+        dropped = random.random() < 0.8
+        return fgt_event(ts, "0419016384", "utm", "ips", "alert" if sev == "critical" else "warning", [
+            ("eventtype", "signature"), ("severity", sev), ("srcip", atk), ("srccountry", atk_c), ("srcintf", "port1"),
+            ("srcintfrole", "wan"), ("dstip", internal), ("dstintf", "port3"), ("dstintfrole", "lan"),
+            ("sessionid", sess), ("action", "dropped" if dropped else "detected"), ("proto", 6), ("service", svc),
+            ("policyid", 11), ("attack", attack), ("srcport", random.randint(1024, 65000)), ("dstport", dport),
+            ("direction", "incoming"), ("attackid", aid), ("profile", "OT-IPS"),
+            ("ref", "http://www.fortinet.com/ids/VID%d" % aid), ("incidentserialno", random.randint(10**8, 10**9)),
+            ("msg", "industrial: %s," % attack), ("crscore", 50 if sev == "critical" else 30), ("craction", 4096),
+            ("crlevel", "critical" if sev == "critical" else "high")])
+    if r < 72:  # web filter block
+        host, url, cat, catn = random.choice(WEB_BLOCKS)
+        ip, c, _, _, _ = random.choice(CLOUD)
+        return fgt_event(ts, "0316013056", "utm", "webfilter", "warning", [
+            ("eventtype", "ftgd_blk"), ("policyid", 20), ("sessionid", sess), ("srcip", random.choice([ENG, HIST, HMI])),
+            ("srcport", random.randint(40000, 60000)), ("srcintf", "port2"), ("srcintfrole", "lan"), ("dstip", ip),
+            ("dstcountry", c), ("dstport", 443), ("dstintf", "port1"), ("dstintfrole", "wan"), ("proto", 6),
+            ("service", "HTTPS"), ("hostname", host), ("profile", "OT-Web"), ("action", "blocked"), ("reqtype", "direct"),
+            ("url", "https://%s%s" % (host, url)), ("cat", catn), ("catdesc", cat),
+            ("msg", "URL belongs to a denied category in policy")])
+    if r < 76:  # antivirus
+        vname, fname = random.choice(VIRUS_NAMES)
+        return fgt_event(ts, "0211008192", "utm", "virus", "warning", [
+            ("eventtype", "infected"), ("virus", vname), ("filename", fname), ("dtype", "Virus"), ("policyid", 20),
+            ("sessionid", sess), ("srcip", random.choice([ENG, HIST])), ("srcintf", "port2"), ("srcintfrole", "lan"),
+            ("dstip", "85.10.240.250"), ("dstcountry", "Germany"), ("dstport", 443), ("dstintf", "port1"),
+            ("dstintfrole", "wan"), ("proto", 6), ("service", "HTTPS"), ("profile", "OT-AV"), ("action", "blocked"),
+            ("direction", "incoming"), ("ref", "http://www.fortinet.com/ve?vn=%s" % vname),
+            ("msg", "File is infected."), ("crscore", 50), ("craction", 2), ("crlevel", "critical")])
+    if r < 82:  # application control
+        app, cat, risk = random.choice(APP_BLOCKS)
+        ip, c, _, _, _ = random.choice(CLOUD)
+        return fgt_event(ts, "1059028704", "utm", "app-ctrl", "warning", [
+            ("eventtype", "signature"), ("appid", random.randint(10000, 50000)), ("srcip", random.choice([ENG, HIST, HMI])),
+            ("srcintf", "port2"), ("srcintfrole", "lan"), ("dstip", ip), ("dstcountry", c), ("dstintf", "port1"),
+            ("dstintfrole", "wan"), ("proto", 6), ("service", "HTTPS"), ("policyid", 20), ("sessionid", sess),
+            ("applist", "OT-AppControl"), ("action", "block"), ("app", app), ("appcat", cat), ("apprisk", risk),
+            ("srcport", random.randint(40000, 60000)), ("dstport", 443), ("msg", "%s: %s," % (cat, app))])
+    if r < 89:  # SSL VPN login failure
+        user = random.choice(VPN_USERS)
+        return fgt_event(ts, "0101039426", "event", "vpn", "alert", [
+            ("logdesc", "SSL VPN login fail"), ("action", "ssl-login-fail"), ("tunneltype", "ssl-web"),
+            ("tunnelid", 0), ("remip", atk), ("user", user), ("group", "N/A"), ("dst_host", "N/A"),
+            ("reason", random.choice(["sslvpn_login_permission_denied", "sslvpn_login_unknown_user",
+                                      "sslvpn_login_password_expired"])),
+            ("msg", "SSL user failed to logged in")])
+    if r < 92:  # SSL VPN tunnel up (success)
+        user = random.choice(["a.lindqvist", "vendor.siemens", "contractor.hale"])
+        ip, c = random.choice(ATTACKERS[6:9])
+        return fgt_event(ts, "0101039424", "event", "vpn", "information", [
+            ("logdesc", "SSL VPN tunnel up"), ("action", "tunnel-up"), ("tunneltype", "ssl-tunnel"),
+            ("tunnelid", random.randint(1, 99999)), ("remip", ip), ("user", user), ("group", "OT-Remote-Access"),
+            ("tunnelip", "10.212.134.%d" % random.randint(2, 100)), ("status", "success"),
+            ("msg", "SSL tunnel established")])
+    if r < 96:  # admin login failure
+        return fgt_event(ts, "0100032002", "event", "system", "alert", [
+            ("logdesc", "Admin login failed"), ("sn", "0"), ("user", random.choice(["admin", "root", "fgtadmin", "n.aaltonen"])),
+            ("ui", "https(%s)" % atk), ("method", "https"), ("srcip", atk), ("dstip", FGT), ("action", "login"),
+            ("status", "failed"), ("reason", random.choice(["name_invalid", "passwd_invalid"])),
+            ("msg", "Administrator admin login failed from https(%s) because of invalid user name" % atk)])
+    if r < 98:  # interface or HA events
+        return random.choice([
+            fgt_event(ts, "0100020099", "event", "system", "warning", [
+                ("logdesc", "Interface status changed"), ("action", "interface-stat-change"), ("status", "DOWN"),
+                ("interface", "port1"), ("msg", "Link monitor: interface port1 was DOWN")]),
+            fgt_event(ts, "0100020100", "event", "system", "notice", [
+                ("logdesc", "Interface status changed"), ("action", "interface-stat-change"), ("status", "UP"),
+                ("interface", "port1"), ("msg", "Link monitor: interface port1 was UP")])])
+    return fgt_event(ts, "0100044546", "event", "system", "information", [  # config change
+        ("logdesc", "Attribute configured"), ("user", random.choice(["n.aaltonen", "admin"])), ("ui", "GUI(10.20.3.21)"),
+        ("action", "Edit"), ("cfgtid", random.randint(10**6, 10**7)), ("cfgpath", "firewall.policy"),
+        ("cfgobj", str(random.choice([10, 11, 12, 17, 20]))), ("cfgattr", "logtraffic[disable->all]"),
+        ("msg", "Edit firewall.policy")])
+
+
 def ep_doc(ts, host, category, action, user=None, proc=None, src=None, dst=None, dport=None, outcome="success", cmd=None):
     d = {
         "@timestamp": utc(ts).strftime("%Y-%m-%dT%H:%M:%S.") + "%03dZ" % (int(ts * 1000) % 1000),
@@ -349,7 +521,8 @@ def _api_ts(ts):
 
 def defender_alert_doc(ts, host, user, title, description, severity="Informational", status="Resolved",
                        classification="FalsePositive", determination="Other", investigation="Benign",
-                       category="Discovery", assigned="Automated investigation", incident=448201):
+                       category="Discovery", assigned="Automated investigation", incident=448201, threat=None,
+                       source="WindowsDefenderAtp"):
     """Raw Microsoft Defender for Endpoint alert as returned by the API (microsoft_defender_endpoint.log input)."""
     resolved = status == "Resolved"
     return json.dumps({
@@ -358,8 +531,8 @@ def defender_alert_doc(ts, host, user, title, description, severity="Information
         "severity": severity, "status": status,
         "classification": classification if resolved else None,
         "determination": determination if resolved else None,
-        "investigationState": investigation, "detectionSource": "WindowsDefenderAtp", "category": category,
-        "threatFamilyName": None, "title": title, "description": description,
+        "investigationState": investigation, "detectionSource": source, "category": category,
+        "threatFamilyName": threat, "title": title, "description": description,
         "alertCreationTime": _api_ts(ts), "firstEventTime": _api_ts(ts - 30), "lastEventTime": _api_ts(ts - 5),
         "lastUpdateTime": _api_ts(ts + 2), "resolvedTime": _api_ts(ts + 2) if resolved else None,
         "machineId": hashlib.sha1(host.encode()).hexdigest(), "computerDnsName": host,
@@ -370,7 +543,8 @@ def defender_alert_doc(ts, host, user, title, description, severity="Information
 
 def servicenow_doc(ts, state_value, state_display, assigned_to=None, close_notes=None, number=INCIDENT_NO,
                    short="Claroty CTD: PLC Program Download Detected on KPP-PLC-T2 (Karins Power Plant)",
-                   priority=(3, "3 - Moderate"), group=("ot-security", "OT Security"), opened_ts=None):
+                   priority=(3, "3 - Moderate"), group=("ot-security", "OT Security"), opened_ts=None,
+                   category=("ot_security", "OT security"), close_code="False positive"):
     """Raw ServiceNow incident record (display values and values per field) for the servicenow.event pipeline."""
     def dv(v, d=None):
         return {"display_value": d if d is not None else str(v), "value": str(v)}
@@ -382,17 +556,17 @@ def servicenow_doc(ts, state_value, state_display, assigned_to=None, close_notes
     opened = opened_ts if opened_ts is not None else ts - 60
     rec = {
         "table_name": "incident", "sys_id": dv(sys_id), "number": dv(number), "short_description": dv(short),
-        "description": dv(short), "category": dv("ot_security", "OT security"),
+        "description": dv(short), "category": dv(*category),
         "state": dv(state_value, state_display), "priority": dv(priority[0], priority[1]),
-        "urgency": dv(2, "2 - Medium"), "impact": dv(2, "2 - Medium"), "active": dv("true" if state_value not in (7,) else "false"),
+        "urgency": dv(2, "2 - Medium"), "impact": dv(2, "2 - Medium"), "active": dv("true" if state_value not in (6, 7) else "false"),
         "assignment_group": dv(group[0], group[1]),
         "assigned_to": dv(assigned_to or "", assigned_to or ""),
         "caller_id": dv("claroty.integration", "Claroty CTD"),
         "opened_by": dv("claroty.integration", "Claroty CTD"), "opened_at": stamp(opened),
         "sys_created_on": stamp(opened), "sys_created_by": dv("claroty.integration"),
         "sys_updated_on": stamp(ts), "sys_updated_by": dv(assigned_to or "claroty.integration"),
-        "close_notes": dv(close_notes or "", close_notes or ""), "close_code": dv("False positive" if close_notes else "", "False positive" if close_notes else ""),
-        "closed_at": stamp(ts) if close_notes else dv("", ""),
+        "close_notes": dv(close_notes or "", close_notes or ""), "close_code": dv(close_code if close_notes else "", close_code if close_notes else ""),
+        "closed_at": stamp(ts) if close_notes and state_value in (6, 7) else dv("", ""),
     }
     return json.dumps(rec)
 
@@ -469,6 +643,22 @@ DEFENDER_BACKGROUND = [  # (title, description, severity, status, classification
     ("Potentially unwanted application detected", "A bundled utility on the historian was flagged as potentially unwanted. Under review.", "Low", "InProgress", "Unknown", "NotAvailable", "Running", "KPP-HIST-01", "svc_scada", "UnwantedSoftware", "OT SOC analyst"),
 ]
 
+# More alerts for a 7 day history: (title, description, severity, category, threat family, detection source, hosts, users)
+DEFENDER_EXTRA = [
+    ("Malware detected on removable media", "A file copied from a USB device matched a known trojan signature and was quarantined.", "High", "Malware", "Trojan:Win32/Wacatac", "WindowsDefenderAv", ["KPP-ENG-WS01", "KPP-USB-KIOSK01"], ["m.virtanen", "j.koskinen"]),
+    ("Ransomware behavior detected", "Rapid file renames with a new extension were blocked on the file server.", "High", "Ransomware", "Ransom:Win32/Cerber", "WindowsDefenderAtp", ["KPP-FILE-01", "KPP-OFFICE-PC07"], ["s.laine", "svc_backup"]),
+    ("Credential dumping attempt", "Access to LSASS memory was blocked.", "High", "CredentialAccess", "HackTool:Win32/Mimikatz", "WindowsDefenderAtp", ["KPP-HIST-01", "KPP-OFFICE-PC12"], ["svc_scada", "j.smith"]),
+    ("Suspicious scheduled task created", "A scheduled task running an unsigned binary was created outside a change window.", "Medium", "Persistence", None, "WindowsDefenderAtp", ["KPP-HMI-01", "KPP-HIST-01"], ["operator1", "svc_scada"]),
+    ("Suspicious network connection to rare external host", "The host connected to an IP address never seen in this environment.", "Medium", "CommandAndControl", None, "CustomTI", ["KPP-OFFICE-PC07", "KPP-OFFICE-PC12"], ["j.smith", "s.laine"]),
+    ("Office application spawned a script interpreter", "A macro-enabled workbook launched PowerShell.", "Medium", "Execution", "Trojan:O97M/Obfuse", "WindowsDefenderAv", ["KPP-OFFICE-PC07", "KPP-FILE-01"], ["s.laine", "j.smith"]),
+    ("Anomalous account activity", "A service account signed in from multiple hosts within a short interval.", "Medium", "InitialAccess", None, "AAD", ["KPP-FILE-01", "KPP-HIST-01"], ["svc_backup", "svc_scada"]),
+    ("Port scan from internal host", "The host probed many ports on the control network segment.", "Medium", "Discovery", None, "WindowsDefenderAtp", ["KPP-ENG-WS01", "KPP-OFFICE-PC12"], ["a.lindqvist", "j.smith"]),
+    ("Unsigned driver loaded", "A driver without a valid signature was loaded.", "Low", "SuspiciousActivity", None, "WindowsDefenderAtp", ["KPP-HMI-01", "KPP-HIST-01"], ["svc_scada"]),
+    ("Remote access tool installed", "A remote administration tool was installed by a standard user.", "Low", "UnwantedSoftware", "PUA:Win32/RemoteAdmin", "WindowsDefenderAv", ["KPP-OFFICE-PC07", "KPP-ENG-WS01"], ["j.smith", "m.virtanen"]),
+    ("Browser extension flagged", "An unapproved browser extension was detected.", "Informational", "SuspiciousActivity", None, "WindowsDefenderAtp", ["KPP-OFFICE-PC07", "KPP-OFFICE-PC12"], ["s.laine", "j.smith"]),
+    ("Engineering software communicated with an industrial controller", "Siemens TIA Portal connected to a PLC. Matches an allowed engineering workflow.", "Informational", "Discovery", None, "WindowsDefenderAtp", ["KPP-ENG-WS01"], ["a.lindqvist"]),
+]
+
 
 def api_history(sink, now):
     """Backdated Defender alerts and ServiceNow incidents so the panels look lived-in."""
@@ -478,6 +668,23 @@ def api_history(sink, now):
             sink.defender(defender_alert_doc(ts, m[7], m[8], m[0], m[1], severity=m[2], status=m[3],
                                              classification=m[4], determination=m[5], investigation=m[6],
                                              category=m[9], assigned=m[10], incident=448100 + i * 10 + k), ts)
+    for i, m in enumerate(DEFENDER_EXTRA):
+        for k in range(random.randint(2, 5)):
+            ts = now - random.uniform(3600, 7 * 86400)
+            sev = m[2]
+            roll = random.random()
+            if sev in ("High", "Medium") and roll < 0.35:
+                status, cls, det, inv, who = "New", "Unknown", "NotAvailable", "Queued", None
+            elif roll < 0.55:
+                status, cls, det, inv, who = "InProgress", "Unknown", "NotAvailable", "Running", "OT SOC analyst"
+            elif sev in ("High", "Medium") and roll < 0.85:
+                status, cls, det, inv, who = "Resolved", "TruePositive", "Malware" if m[4] else "SecurityTesting", "SuccessfullyRemediated", "n.aaltonen@kpp.example"
+            else:
+                status, cls, det, inv, who = "Resolved", "FalsePositive", "Other", "Benign", "Automated investigation"
+            sink.defender(defender_alert_doc(ts, random.choice(m[6]), random.choice(m[7]), m[0], m[1], severity=sev,
+                                             status=status, classification=cls, determination=det, investigation=inv,
+                                             category=m[3], assigned=who, incident=448300 + i * 10 + k, threat=m[4],
+                                             source=m[5]), ts)
     H = 3600.0
     incidents = [  # (number, short description, priority, group, [(hours ago, state, assignee, close note)])
         ("INC0010188", "FortiGate FGT-KPP-OT01: firmware advisory review", (3, "3 - Moderate"),
@@ -499,12 +706,52 @@ def api_history(sink, now):
          [(2.2, (1, "New"), None, None), (2.1, (2, "In Progress"), "OT SOC analyst", None),
           (1.8, (7, "Closed"), "OT SOC analyst", "False positive: scheduled maintenance, known-good workstation.")]),
     ]
-    for number, short, prio, grp, steps in incidents:
+    P1, P2, P3, P4 = (1, "1 - Critical"), (2, "2 - High"), (3, "3 - Moderate"), (4, "4 - Low")
+    GRP = {"ot": ("ot-security", "OT Security"), "net": ("network-ops", "Network Operations"),
+           "svc": ("service-desk", "Service Desk"), "soc": ("it-security", "IT Security")}
+    CAT = {"sec": ("ot_security", "OT security"), "net": ("network", "Network"), "hw": ("hardware", "Hardware"),
+           "sw": ("software", "Software"), "inq": ("inquiry", "Inquiry / Help")}
+    templates = [  # (short description, priority, group, category, people)
+        ("Claroty CTD: PLC Program Download Detected on KPP-PLC-T2", P1, "ot", "sec", ["J. Koskinen", "S. Laine"]),
+        ("Defender: ransomware behavior on KPP-FILE-01", P1, "soc", "sec", ["N. Aaltonen", "T. Berg"]),
+        ("Defender: credential dumping attempt on KPP-HIST-01", P2, "ot", "sec", ["J. Koskinen"]),
+        ("FortiGate: repeated SSL VPN login failures from external hosts", P2, "net", "net", ["N. Aaltonen", "R. Lund"]),
+        ("FortiGate: IPS critical signature on port1", P2, "net", "net", ["R. Lund"]),
+        ("FortiGate: interface port1 flapping", P3, "net", "net", ["R. Lund", "N. Aaltonen"]),
+        ("Claroty CTD: new unmanaged asset 10.20.9.77 seen on control network", P3, "ot", "sec", ["S. Laine", "J. Koskinen"]),
+        ("Meta Data Kiosk: file blocked, policy violation", P3, "ot", "sec", ["S. Laine"]),
+        ("KPP-HMI-01 slow to respond", P4, "svc", "hw", ["E. Voss", "M. Haas"]),
+        ("Request: remote access for vendor Siemens", P4, "svc", "inq", ["E. Voss"]),
+        ("Historian disk usage above 85 percent", P3, "svc", "hw", ["M. Haas", "E. Voss"]),
+        ("Patch window request for KPP-ENG-WS01", P4, "svc", "sw", ["M. Haas"]),
+        ("Defender: PUA on engineering workstation", P3, "soc", "sw", ["T. Berg", "N. Aaltonen"]),
+    ]
+    notes = ["Resolved after investigation, no further action.", "Confirmed benign, tuned the detection.",
+             "Remediated and verified with the owner.", "Duplicate of an existing incident.", "Vendor fix applied."]
+    for j in range(26):
+        short, prio, g, c, people = random.choice(templates)
+        number = "INC00%d" % (10100 + j * 3)
+        opened_h = random.uniform(2, 14 * 24)
+        who = random.choice(people)
+        steps = [(opened_h, (1, "New"), None, None), (opened_h - random.uniform(0.1, 1.5), (2, "In Progress"), who, None)]
+        roll = random.random()
+        if roll < 0.2:
+            steps.append((max(opened_h - random.uniform(1.5, 6), 0.3), (3, "On Hold"), who, None))
+        elif roll < 0.75:
+            dur = random.uniform(1, 40) if prio[0] > 1 else random.uniform(0.5, 6)
+            steps.append((max(opened_h - dur, 0.2), (random.choice([6, 7]), "Resolved"), who, random.choice(notes)))
+            if steps[-1][1][0] == 7:
+                steps[-1] = (steps[-1][0], (7, "Closed"), who, steps[-1][3])
+        steps = [st for st in steps if st[0] > 0.1]
+        incidents.append((number, short, prio, GRP[g], steps, CAT[c]))
+    for number, short, prio, grp, steps, *cat in incidents:
         opened = now - steps[0][0] * H
         for hrs, (sv, sd), who, note in steps:
             t = now - hrs * H
             sink.servicenow(servicenow_doc(t, sv, sd, assigned_to=who, close_notes=note, number=number,
-                                           short=short, priority=prio, group=grp, opened_ts=opened), t)
+                                           short=short, priority=prio, group=grp, opened_ts=opened,
+                                           **({"category": cat[0]} if cat else {}),
+                                           close_code="Solved (Permanently)" if sv == 6 else "False positive"), t)
 
 
 class Sink:
@@ -617,6 +864,8 @@ class Sink:
 def normal_tick(sink, ts):
     flow = random.choice(FLOWS)
     sink.fgt(fgt_line(ts, flow))
+    if random.random() < 0.6:
+        sink.fgt(fgt_external(ts))
     if random.random() < 0.5:
         sink.ep(ep_doc(ts, NAME_BY_IP[flow[2]], "network", "connection_attempted",
                        src=flow[2], dst=flow[3], dport=flow[5]))
