@@ -4,7 +4,7 @@
 #   2. create ot-assets index (skip if present) and load assets
 #   3. create Fleet package policies (only if absent) for "ot-demo-policy"
 #   4. import dashboards (overwrite=true)
-#   5. create the detection rule (only if absent) and validate it
+#   5. create or update the detection rule and validate it
 #   6. set config_ready=true in shared/env.json
 set -euo pipefail
 # shellcheck source=lib.sh
@@ -33,22 +33,15 @@ else
   require_2xx "create ot-assets"
   log "created ot-assets"
 fi
+# additive mapping update so new fields (e.g. asset.purdue_level) reach an existing lookup index
+es PUT /ot-assets/_mapping -d "$(jq -c '.mappings' "$A_INDEX")"
+require_2xx "update ot-assets mapping"
 expected=$(( $(grep -c . "$A_BULK") / 2 ))
-es GET /ot-assets/_count; require_2xx "count ot-assets"
-have="$(printf '%s' "$HTTP_BODY" | jq -r '.count')"
-if [[ $have -eq $expected ]]; then
-  log "ot-assets already has $have documents, skipping bulk load"
-else
-  if [[ $have -gt 0 ]]; then
-    log "ot-assets has $have docs, expected $expected; clearing and reloading"
-    es POST "/ot-assets/_delete_by_query?refresh=true&conflicts=proceed" -d '{"query":{"match_all":{}}}'
-    require_2xx "clear ot-assets"
-  fi
-  es POST "/ot-assets/_bulk?refresh=true" -H 'Content-Type: application/x-ndjson' --data-binary "@$A_BULK"
-  require_2xx "bulk load assets"
-  [[ "$(printf '%s' "$HTTP_BODY" | jq -r '.errors')" == false ]] || die "bulk load reported item errors: $(printf '%s' "$HTTP_BODY" | head -c 600)"
-  log "loaded $expected assets"
-fi
+# bulk index by _id is an upsert, so re-running refreshes asset metadata
+es POST "/ot-assets/_bulk?refresh=true" -H 'Content-Type: application/x-ndjson' --data-binary "@$A_BULK"
+require_2xx "bulk load assets"
+[[ "$(printf '%s' "$HTTP_BODY" | jq -r '.errors')" == false ]] || die "bulk load reported item errors: $(printf '%s' "$HTTP_BODY" | head -c 600)"
+log "loaded $expected assets"
 
 # ---- 3. Fleet package policies -------------------------------------------
 kb GET "/api/fleet/agent_policies?perPage=100" || die "Kibana unreachable"
@@ -95,8 +88,12 @@ else
   kb GET "/api/detection_engine/rules/_find?per_page=200"; require_2xx "list rules"
   printf '%s' "$HTTP_BODY" | jq -e --arg n "$rule_name" '.data[] | select(.name==$n)' >/dev/null 2>&1 && found=1
 fi
-if [[ $found -eq 1 ]]; then
-  log "detection rule '$rule_name' exists, skipping creation"
+if [[ $found -eq 1 && -n $rule_id ]]; then
+  kb PUT /api/detection_engine/rules --data-binary "@$RULE"
+  require_2xx "update detection rule"
+  log "updated detection rule '$rule_name'"
+elif [[ $found -eq 1 ]]; then
+  log "detection rule '$rule_name' exists (no rule_id to update by), skipping"
 else
   kb POST /api/detection_engine/rules --data-binary "@$RULE"
   require_2xx "create detection rule"

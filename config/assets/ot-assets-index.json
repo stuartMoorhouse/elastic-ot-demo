@@ -8,25 +8,50 @@
     "properties": {
       "asset": {
         "properties": {
-          "name": { "type": "keyword" },
-          "ip": { "type": "ip" },
-          "role": { "type": "keyword" },
-          "vendor": { "type": "keyword" },
-          "model": { "type": "keyword" },
-          "criticality": { "type": "keyword" },
-          "owner": { "type": "keyword" },
-          "known_good": { "type": "boolean" },
-          "maintenance_window": { "type": "keyword" }
+          "name": {
+            "type": "keyword"
+          },
+          "ip": {
+            "type": "ip"
+          },
+          "role": {
+            "type": "keyword"
+          },
+          "vendor": {
+            "type": "keyword"
+          },
+          "model": {
+            "type": "keyword"
+          },
+          "criticality": {
+            "type": "keyword"
+          },
+          "owner": {
+            "type": "keyword"
+          },
+          "known_good": {
+            "type": "boolean"
+          },
+          "maintenance_window": {
+            "type": "keyword"
+          },
+          "purdue_level": {
+            "type": "integer"
+          }
         }
       },
       "site": {
         "properties": {
-          "name": { "type": "keyword" }
+          "name": {
+            "type": "keyword"
+          }
         }
       },
       "network": {
         "properties": {
-          "zone": { "type": "keyword" }
+          "zone": {
+            "type": "keyword"
+          }
         }
       }
     }

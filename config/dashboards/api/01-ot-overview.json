@@ -195,7 +195,7 @@
         "h": 11
       },
       "config": {
-        "title": "Alerts by network zone",
+        "title": "Alerts by Purdue level",
         "type": "pie",
         "data_source": {
           "type": "esql",

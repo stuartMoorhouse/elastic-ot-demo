@@ -1,10 +1,26 @@
 {
   "title": "OT: Grouped Claroty alerts - S7 activity from KPP-ENG-WS01 to KPP-PLC-T2 (Karins Power Plant)",
-  "tags": ["OT", "Claroty", "demo", "Karins Power Plant", "false-positive-candidate"],
+  "tags": [
+    "OT",
+    "Claroty",
+    "demo",
+    "Karins Power Plant",
+    "false-positive-candidate",
+    "MITRE ATT&CK for ICS",
+    "T0843",
+    "T0846"
+  ],
   "severity": "low",
-  "description": "## Grouped Claroty CTD alert (suppressed duplicates)\n\n**Alert names:** S7 Unauthorized Read/Scan; PLC Program Download Detected\n**Destination asset:** KPP-PLC-T2 (10.20.4.12), Siemens S7-1500 PLC, Turbine 2 governor control, Level 1 Control, criticality Critical\n**Source asset:** KPP-ENG-WS01 (10.20.3.21), engineering workstation (TIA Portal), owner Control Systems Eng., known_good = true\n**Site:** Karins Power Plant (Purdhoe Valley substation complex)\n\n### Firewall context\nFortiGate FGT-KPP-OT01 allowed the traffic under policy `ENG-to-PLC-S7` (same rule on every repeated alert).\n\n### Known-good context\n- Source workstation is flagged known_good in the asset inventory (ot-assets).\n- Scheduled maintenance window: Monday 08:00-10:00 Europe/Helsinki.\n- Endpoint telemetry shows an authorised engineer logon on KPP-ENG-WS01 followed by the TIA Portal process.\n\n### Assessment\nSuspected false positive: expected engineering activity during the scheduled maintenance window. Human review required (NIS2 human-in-the-loop): confirm in the Asset and Firewall Context dashboard, add an analyst note, then close the case as a false positive.\n\n_Synthetic demo data._",
+  "description": "## Grouped Claroty CTD alert (suppressed duplicates)\n\n**Alert names:** S7 Unauthorized Read/Scan; PLC Program Download Detected\n**Destination asset:** KPP-PLC-T2 (10.20.4.12), Siemens S7-1500 PLC, Turbine 2 governor control, Level 1 Control Network (Purdue L1), criticality Critical\n**Source asset:** KPP-ENG-WS01 (10.20.3.21), engineering workstation (TIA Portal), owner Control Systems Eng., known_good = true\n**Site:** Karins Power Plant (Purdhoe Valley substation complex)\n\n### MITRE ATT&CK for ICS\n- T0843 Program Download (PLC Program Download Detected)\n- T0846 Remote System Discovery (S7 Unauthorized Read/Scan)\n\n### Firewall context\nFortiGate FGT-KPP-OT01 allowed the traffic under policy `ENG-to-PLC-S7` (same rule on every repeated alert).\n\n### Known-good context\n- Source workstation is flagged known_good in the asset inventory (ot-assets).\n- Scheduled maintenance window: Monday 08:00-10:00 Europe/Helsinki.\n- Endpoint telemetry shows an authorised engineer logon on KPP-ENG-WS01 followed by the TIA Portal process.\n\n### Assessment\nSuspected false positive: expected engineering activity during the scheduled maintenance window. Human review required (NIS2 human-in-the-loop): confirm in the Asset and Firewall Context dashboard, add an analyst note, then close the case as a false positive.\n\n_Synthetic demo data._",
   "assignees": [],
-  "connector": { "id": "none", "name": "none", "type": ".none", "fields": null },
-  "settings": { "syncAlerts": false },
+  "connector": {
+    "id": "none",
+    "name": "none",
+    "type": ".none",
+    "fields": null
+  },
+  "settings": {
+    "syncAlerts": false
+  },
   "owner": "securitySolution"
 }

@@ -67,7 +67,7 @@ def claroty_line(ts, sig_id, name, sev, src, dst, proto="S7Comm"):
         "CtdSourceIp": src, "CtdDestinationIp": dst,
         "CtdSourceHost": NAME_BY_IP.get(src, src), "CtdDestinationHost": NAME_BY_IP.get(dst, dst),
         "proto": proto, "cat": "Security", "cs1Label": "site", "cs1": SITE,
-        "cs2Label": "zone", "cs2": "Level 1 Control", "cn1Label": "alert_id",
+        "cs2Label": "zone", "cs2": "Level 1 Control Network", "cn1Label": "alert_id",
         "cn1": random.randint(100000, 999999),
         "CtdAlertId": random.randint(100000, 999999),
         "msg": name + " between %s and %s" % (NAME_BY_IP.get(src, src), NAME_BY_IP.get(dst, dst)),

@@ -5,7 +5,9 @@
   "type": "query",
   "language": "kuery",
   "query": "data_stream.dataset : \"claroty_ctd.event\" and event.kind : \"alert\"",
-  "index": ["logs-claroty_ctd.event-*"],
+  "index": [
+    "logs-claroty_ctd.event-*"
+  ],
   "severity": "low",
   "risk_score": 21,
   "interval": "1m",
@@ -13,17 +15,34 @@
   "to": "now",
   "max_signals": 1000,
   "enabled": true,
-  "tags": ["OT", "Claroty", "demo"],
+  "tags": [
+    "OT",
+    "Claroty",
+    "demo",
+    "MITRE ATT&CK for ICS",
+    "T0843 Program Download",
+    "T0846 Remote System Discovery",
+    "Purdue Level 1"
+  ],
   "alert_suppression": {
-    "group_by": ["destination.ip", "claroty_ctd.event.name"],
-    "duration": { "value": 1, "unit": "h" },
+    "group_by": [
+      "destination.ip",
+      "claroty_ctd.event.name"
+    ],
+    "duration": {
+      "value": 1,
+      "unit": "h"
+    },
     "missing_fields_strategy": "suppress"
   },
   "false_positives": [
     "Scheduled maintenance by a known-good engineering workstation (see ot-assets: asset.known_good and asset.maintenance_window)."
   ],
-  "note": "Triage: open the Asset and Firewall Context dashboard for the destination asset, confirm known_good and maintenance window in the asset metadata, confirm the FortiGate rule hit (policy ENG-to-PLC-S7) and the authorised engineer logon on the source workstation. Close the case as a false positive if all match.",
-  "references": [],
+  "note": "Triage: open the Asset and Firewall Context dashboard for the destination asset, confirm known_good and maintenance window in the asset metadata, confirm the FortiGate rule hit (policy ENG-to-PLC-S7) and the authorised engineer logon on the source workstation. Close the case as a false positive if all match.\n\nMITRE ATT&CK for ICS: PLC Program Download maps to T0843 (Program Download); S7 read/scan maps to T0846 (Remote System Discovery). Kibana rule threat mapping covers Enterprise ATT&CK only, so ICS techniques are carried as tags and references. Change management: an unexpected program download to a Level 1 controller is a change-control event.",
+  "references": [
+    "https://attack.mitre.org/techniques/T0843/",
+    "https://attack.mitre.org/techniques/T0846/"
+  ],
   "threat": [],
   "actions": []
 }

@@ -36,11 +36,18 @@ Open **Asset and Firewall Context** for KPP-PLC-T2 and KPP-ENG-WS01:
 
 Say: "No query writing. These panels were built by picking fields."
 
+Say: "The data is organised by Purdue level, the standard OT model: Level 1 is the PLCs and RTUs, Level 2 the HMI,
+engineering workstation and historian, Level 3 the DMZ. We are covering network and endpoint together, so there are
+no blind spots between layers (defence in depth)." Point to the Alerts by Purdue level panel on OT Overview.
+
 ### 4. Confirm it is a known good device (1 min)
 
 On the asset panel, show that KPP-ENG-WS01 is flagged known good with a Monday maintenance window.
 
 Say: "This lookup against our asset list answers whether this is a known device or noise."
+
+Say: "That is asset management: the lookup tells us this workstation is authorised for this PLC and when it is allowed to
+change it."
 
 ### 5. Show alert grouping (1 min)
 
@@ -49,6 +56,10 @@ Then open Security > Alerts and show the single grouped alert with its suppresse
 
 Say: "The analyst sees one contextualised incident, not a thousand duplicates, and a person still
 makes the decision."
+
+Say: "A program download to a Level 1 controller is a change-management event. The alert is tagged MITRE ATT&CK for ICS
+T0843 Program Download, so if this were not a scheduled change it would be a real concern. Here the maintenance window
+and the authorised logon show it is expected."
 
 ### 6. Close the case (1 min)
 
