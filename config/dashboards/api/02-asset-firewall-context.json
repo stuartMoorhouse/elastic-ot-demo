@@ -16,7 +16,7 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM ot-assets | WHERE asset.ip == TO_IP(\"10.20.4.12\") OR asset.ip == TO_IP(\"10.20.3.21\") | KEEP asset.name, asset.ip, asset.role, site.name, network.zone, asset.criticality, asset.owner, asset.known_good, asset.maintenance_window"
+          "query": "FROM ot-assets | KEEP asset.name, asset.ip, asset.role, site.name, network.zone, asset.criticality, asset.owner, asset.known_good, asset.maintenance_window"
         },
         "metrics": [],
         "rows": [

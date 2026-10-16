@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Control the OT generator on the EC2 host over SSH.
 #   run-scenario.sh noise on|off
-#   run-scenario.sh backfill [HOURS]     (default 24)
+#   run-scenario.sh backfill [HOURS [END_OFFSET_MIN]]     (default 24, 0)
 #   run-scenario.sh scenario             (Karins false-positive storyline)
 #   run-scenario.sh threat               (contrast: unmanaged source, not in inventory)
+#   run-scenario.sh showcase             (3 benign Claroty alerts, one per type, plus their endpoint/kiosk/firewall trail; used by reset-demo.sh)
 #   run-scenario.sh ews-compromise       (one-shot VPN -> Defender -> Claroty PLC change on KPP-ENG-WS02, for the EWS rule)
 #   run-scenario.sh ticket-close         (close the sample ServiceNow incident, after the case is closed)
 #   run-scenario.sh status
@@ -16,7 +17,7 @@ need jq
 
 GEN=/opt/ot-demo/ot_generator.py
 UNIT=ot-generator.service
-usage() { sed -n '2,9p' "${BASH_SOURCE[0]}" >&2; exit 2; }
+usage() { sed -n '2,10p' "${BASH_SOURCE[0]}" >&2; exit 2; }
 
 ssh_cmd_array() {
   local cmd="${OT_SSH_CMD:-$(env_get ssh_command)}"
@@ -50,7 +51,9 @@ case "$action" in
   backfill)
     hours="${2:-24}"
     [[ $hours =~ ^[0-9]+$ ]] || die "HOURS must be an integer"
-    remote "sudo python3 $GEN --mode backfill --hours $hours"
+    offset="${3:-0}"
+    [[ $offset =~ ^[0-9]+$ ]] || die "END_OFFSET_MIN must be an integer"
+    remote "sudo python3 $GEN --mode backfill --hours $hours --end-offset-min $offset"
     ;;
   scenario)
     env_set scenario_triggered_at "$(now_epoch)"
@@ -64,6 +67,10 @@ case "$action" in
     log "triggering contrast (threat) scenario at $(date -u +%FT%TZ)"
     remote "sudo python3 $GEN --mode threat"
     log "threat scenario sent"
+    ;;
+  showcase)
+    remote "sudo timeout 120 python3 $GEN --mode showcase"
+    log "showcase sent (3 benign Claroty alerts, one per type)"
     ;;
   ews-compromise)
     base="$(now_epoch)"

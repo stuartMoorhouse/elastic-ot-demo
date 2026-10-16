@@ -4,7 +4,8 @@
 # - deletes cases tagged "ot-demo" (falls back to nothing destructive beyond that tag)
 # - deletes the demo detection-rule alerts (falls back to closing them)
 # - deletes all documents in the ten demo data streams, keeping the streams (skip with --keep-data)
-# - re-sends the one-shot EWS compromise sequence so the VPN/Defender/Claroty correlation rule fires once (skip with --keep-data)
+# - refills all dashboards (24h backfill, API-shaped data, 14 days of integration history), then sends exactly five alerts:
+#   3 benign Claroty alert types, the unmanaged-host threat and the one-shot EWS compromise sequence so the VPN/Defender/Claroty correlation rule fires once (skip with --keep-data)
 # - sets demo_executed=false; with --rerun triggers the scenario again afterwards
 set -euo pipefail
 # shellcheck source=lib.sh
@@ -71,13 +72,20 @@ else
 fi
 
 if [[ $KEEP_DATA -eq 0 ]]; then
-  # The data deletion above removed the previous sequence; send it again so the rule fires once per reset.
-  # The rule's 4h alert suppression keeps repeated rule runs to that single alert.
-  if "$(dirname "${BASH_SOURCE[0]}")/run-scenario.sh" ews-compromise; then
-    log "EWS compromise sequence sent"
-  else
-    warn "EWS compromise sequence not sent; run ./scripts/run-scenario.sh ews-compromise"
-  fi
+  # Refill every dashboard, then send exactly five alerts: 3 benign Claroty alert types, the unmanaged-host threat
+  # and the EWS correlation alert. Noise stays off so nothing else reaches the alert rules.
+  HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  "$HERE/run-scenario.sh" noise off || warn "could not stop noise generator"
+  # 24h of background traffic, telemetry and Claroty history for the OT dashboards. It stops 10 minutes short of
+  # now, so its background alerts (older than the rules' 5 minute lookback) cannot join the live alert groups.
+  "$HERE/run-scenario.sh" backfill 24 10 || warn "backfill not sent"
+  # Claroty assets and baselines, Defender alerts and ServiceNow incidents.
+  "$HERE/load-api-data.sh" api-data || warn "API data not loaded"
+  # 14 days of history for the Claroty, FortiGate, Defender and ServiceNow integration dashboards.
+  "$HERE/load-api-data.sh" integration-fill || warn "integration history not loaded"
+  "$HERE/run-scenario.sh" showcase || warn "showcase not sent"
+  "$HERE/run-scenario.sh" threat || warn "threat not sent"
+  "$HERE/run-scenario.sh" ews-compromise || warn "EWS compromise sequence not sent"
 fi
 
 env_set demo_executed false json

@@ -58,8 +58,12 @@ ENGINEER = "a.lindqvist"
 # broad contractor policy. No endpoint telemetry exists for it (no agent installed).
 UNKNOWN_SRC = "10.20.9.77"
 FLOW_THREAT = (17, "Contractor-VPN-to-OT", UNKNOWN_SRC, PLC, "S7", 102, 6, "port1", "port3")
-THREAT_ALERTS = [("PLC_PROG_DL", "PLC Program Download Detected", 8),
-                 ("S7_READ_SCAN", "S7 Unauthorized Read/Scan", 7)]
+THREAT_ALERTS = [("PLC_PROG_DL", "PLC Program Download Detected", 8)]
+# Showcase (reset): one benign alert per type, each from a known-good asset: (sig, name, severity, source)
+SHOWCASE_ALERTS = [("S7_READ_SCAN", "S7 Unauthorized Read/Scan", 3, ENG),
+                   ("PLC_PROG_DL", "PLC Program Download Detected", 3, ENG),
+                   ("FW_VER_QUERY", "Firmware Version Query", 2, HIST)]
+SHOWCASE_REPEATS = 21  # identical events per benign alert: 1 alert plus 20 suppressed
 # Correlation storyline (ews-compromise mode): stolen VPN credentials reach a second engineering workstation, Defender
 # flags it, then Claroty sees it modify the PLC. Used by the "OT: VPN access, EWS compromise and PLC change" rule.
 EWS2 = ASSETS["KPP-ENG-WS02"]
@@ -96,7 +100,8 @@ ATYPE_BY_NAME = {"KPP-PLC-T2": "PLC", "KPP-RTU-SS1": "RTU", "KPP-ENG-WS01": "End
 SITE_ID = "KPP-SITE-01"
 CTD_SENSOR = "KPP-CTD-SENSOR01"
 # Approximate Claroty categories for our two alert signatures (category strings are a best guess).
-CATEGORY_BY_SIG = {"S7_READ_SCAN": "Security/Network Scan", "PLC_PROG_DL": "Integrity/PLC Code Download"}
+CATEGORY_BY_SIG = {"S7_READ_SCAN": "Security/Network Scan", "PLC_PROG_DL": "Integrity/PLC Code Download",
+                   "FW_VER_QUERY": "Non-Risky/Asset Query"}
 
 
 def zone_of(ip):
@@ -835,7 +840,7 @@ class Sink:
 
     def servicenow(self, line, ts):
         # _conf is normally added by the integration's CEL input; the pipeline reads it.
-        self._bulk("servicenow.event", line, ts, {"_conf": {"tz_offset": "UTC", "timestamp_field": "sys_updated_on",
+        self._bulk("servicenow.event", line, ts, {"tags": ["incident", "sample-data"], "_conf": {"tz_offset": "UTC", "timestamp_field": "sys_updated_on",
                                                     "data_has_display_values": "true", "date_format_preference": "MMdd"}})
 
     def plc4x(self, line):
@@ -969,7 +974,7 @@ def run_noise(a, sink):
 
 
 def run_backfill(a, sink):
-    end = time.time()
+    end = time.time() - a.end_offset_min * 60  # stop short of now so background alerts do not join the live alert groups
     start = end - a.hours * 3600
     step = 60.0 / max(a.backfill_events_per_min, 1)
     claroty_history(sink, end)
@@ -992,10 +997,11 @@ def run_backfill(a, sink):
     print("backfill done: %d ticks over %.1fh" % (count, a.hours), file=sys.stderr)
 
 
-def run_scenario(a, sink):
-    t0 = time.time()
+def scenario_provenance(sink, t0, with_history=True):
+    """The known-good trail behind the ENG-WS01 alerts: CTD login, kiosk scan, engineer logon, TIA Portal, S7 firewall hits."""
     # Provenance: the engineer scanned the project file at the Meta Data Kiosk before the change.
-    claroty_history(sink, t0)
+    if with_history:
+        claroty_history(sink, t0)
     claroty_activity(sink, t0 - 90, user=ENGINEER, which=ACTIVITIES[0])  # engineer logs in to CTD
     for k in range(90):  # 45 minutes of steady turbine telemetry (the process is unaffected by the change)
         telemetry_tick(sink, t0 - 2700 + k * 30)
@@ -1012,6 +1018,11 @@ def run_scenario(a, sink):
         "CtdSourceZone": zone_of(ENG), "CtdDestinationZone": zone_of(PLC), "CtdProtocol": "S7Comm",
         "CtdCategory": "Integrity/Asset Information Change", "CtdResolvedAs": "Unresolved", "CtdEventTypeId": 4,
         "CtdMessage": "Information change detected on KPP-PLC-T2 (program version)", "CtdDeviceExternalId": SITE_ID}))
+
+
+def run_scenario(a, sink):
+    t0 = time.time()
+    scenario_provenance(sink, t0)
     flow = FLOWS[0]
     n = max(a.scenario_events, 1000)
     spread = a.scenario_seconds
@@ -1027,6 +1038,28 @@ def run_scenario(a, sink):
         if not a.dry_run and spread > 0 and i % 50 == 0:
             time.sleep(spread / (n / 50.0))
     print("scenario done: %d claroty alerts sent" % n, file=sys.stderr)
+
+
+def run_showcase(a, sink):
+    """Three benign Claroty alert types from known-good assets, 21 identical events each (becomes 3 alerts, 20 suppressed each)."""
+    t0 = a.base_time or time.time()
+    scenario_provenance(sink, t0 - 120, with_history=False)  # endpoint, kiosk and firewall trail, no alert burst
+    # Recent Claroty history (non-ghost insights, events, activity, health) so the integration dashboards are not
+    # empty on a short time range such as "Last 3 hours", where only the threat's ghost insight would show.
+    for _ in range(12):
+        claroty_insight(sink, t0 - random.randint(300, 10500))
+    for _ in range(12):
+        claroty_event(sink, t0 - random.randint(300, 10500))
+    for _ in range(6):
+        claroty_activity(sink, t0 - random.randint(300, 10500))
+    for k in range(3):
+        claroty_health(sink, t0 - 600 + k * 300)
+    for j in range(12):  # firewall hits on the ENG-to-PLC-S7 policy for the Asset and Firewall Context dashboard
+        sink.fgt(fgt_line(t0 - 120 + j * 8, FLOWS[0]))
+    for i, (sid, name, sev, src) in enumerate(SHOWCASE_ALERTS):
+        for j in range(SHOWCASE_REPEATS):
+            sink.claroty(claroty_line(t0 - 120 + j * 2 + i, sid, name, sev, src, PLC))
+    print("showcase done: %d benign claroty events sent" % (len(SHOWCASE_ALERTS) * SHOWCASE_REPEATS), file=sys.stderr)
 
 
 def run_api_data(a, sink):
@@ -1097,7 +1130,7 @@ def run_threat(a, sink):
         if i % 4 == 0:  # Claroty insight: communication from a ghost (unconfirmed) asset
             claroty_insight(sink, ts, src=UNKNOWN_SRC, dst=PLC, ghost=True, name="External Communication",
                             severity="High", os_name="Unknown")
-        sid, name, sev = THREAT_ALERTS[0] if i % 3 else THREAT_ALERTS[1]
+        sid, name, sev = THREAT_ALERTS[0]
         sink.claroty(claroty_line(ts, sid, name, sev, UNKNOWN_SRC, PLC))
         sink.fgt(fgt_line(ts, FLOW_THREAT))
     print("threat done: %d claroty alerts sent from unmanaged host %s" % (n, UNKNOWN_SRC), file=sys.stderr)
@@ -1105,8 +1138,9 @@ def run_threat(a, sink):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--mode", required=True, choices=["noise", "backfill", "scenario", "threat", "ticket-close", "api-data", "ews-compromise", "ews-defender"])
+    p.add_argument("--mode", required=True, choices=["noise", "backfill", "scenario", "threat", "ticket-close", "api-data", "ews-compromise", "ews-defender", "showcase"])
     p.add_argument("--hours", type=float, default=24, help="backfill window")
+    p.add_argument("--end-offset-min", type=float, default=0, help="backfill ends this many minutes before now")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, dest="claroty_port", default=9100, help="Claroty CEF TCP port")
     p.add_argument("--claroty-port", type=int, dest="claroty_port", help=argparse.SUPPRESS)
@@ -1133,7 +1167,7 @@ def main():
         a.dry_run = True  # prints bulk lines only: no sockets and no files are opened
     sink = Sink(a)
     try:
-        {"noise": run_noise, "backfill": run_backfill, "scenario": run_scenario, "threat": run_threat, "ticket-close": run_ticket_close, "api-data": run_api_data, "ews-compromise": run_ews_compromise, "ews-defender": run_ews_defender}[a.mode](a, sink)
+        {"noise": run_noise, "backfill": run_backfill, "scenario": run_scenario, "threat": run_threat, "ticket-close": run_ticket_close, "api-data": run_api_data, "ews-compromise": run_ews_compromise, "ews-defender": run_ews_defender, "showcase": run_showcase}[a.mode](a, sink)
     except KeyboardInterrupt:
         pass
     if a.dry_run:

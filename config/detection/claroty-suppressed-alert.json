@@ -4,13 +4,17 @@
   "description": "Turns Claroty CTD alerts ingested through the Claroty CTD integration into Elastic detection alerts, grouping repeated identical alerts (same source, same destination asset and same Claroty alert name; a different source breaks out as its own alert) into a single alert with a suppressed-document count for 4 hours. Intended to keep one contextualised item per asset and signature for analyst triage.",
   "type": "query",
   "language": "kuery",
-  "query": "data_stream.dataset : \"claroty_ctd.event\" and event.kind : \"alert\"",
+  "query": "data_stream.dataset : \"claroty_ctd.event\" and event.kind : \"alert\" and not source.ip : \"10.20.3.22\"",
   "index": [
     "logs-claroty_ctd.event-*"
   ],
   "rule_name_override": "claroty_ctd.event.name",
   "investigation_fields": {
-    "field_names": ["source.ip", "destination.ip", "claroty_ctd.event.name"]
+    "field_names": [
+      "source.ip",
+      "destination.ip",
+      "claroty_ctd.event.name"
+    ]
   },
   "severity": "low",
   "risk_score": 21,
@@ -49,5 +53,68 @@
     "https://attack.mitre.org/techniques/T0846/"
   ],
   "threat": [],
-  "actions": []
+  "actions": [],
+  "severity_mapping": [
+    {
+      "field": "claroty_ctd.event.severity",
+      "operator": "equals",
+      "value": "2",
+      "severity": "low"
+    },
+    {
+      "field": "claroty_ctd.event.severity",
+      "operator": "equals",
+      "value": "3",
+      "severity": "low"
+    },
+    {
+      "field": "claroty_ctd.event.severity",
+      "operator": "equals",
+      "value": "4",
+      "severity": "medium"
+    },
+    {
+      "field": "claroty_ctd.event.severity",
+      "operator": "equals",
+      "value": "5",
+      "severity": "medium"
+    },
+    {
+      "field": "claroty_ctd.event.severity",
+      "operator": "equals",
+      "value": "6",
+      "severity": "medium"
+    },
+    {
+      "field": "claroty_ctd.event.severity",
+      "operator": "equals",
+      "value": "7",
+      "severity": "high"
+    },
+    {
+      "field": "claroty_ctd.event.severity",
+      "operator": "equals",
+      "value": "8",
+      "severity": "high"
+    },
+    {
+      "field": "claroty_ctd.event.severity",
+      "operator": "equals",
+      "value": "9",
+      "severity": "critical"
+    },
+    {
+      "field": "claroty_ctd.event.severity",
+      "operator": "equals",
+      "value": "10",
+      "severity": "critical"
+    }
+  ],
+  "risk_score_mapping": [
+    {
+      "field": "event.risk_score",
+      "operator": "equals",
+      "value": ""
+    }
+  ]
 }
