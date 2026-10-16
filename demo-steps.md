@@ -60,6 +60,24 @@ On the asset panel, show that KPP-ENG-WS01 is flagged known good with a Monday m
 Say: "This lookup against our asset list is asset management: it tells us this workstation is authorised for this
 PLC and when it is allowed to change it."
 
+### Build a panel live, no KQL (1 min)
+
+On a new scratch dashboard (Dashboards > Create dashboard > Create visualization):
+1. Set the data view to `logs-fortinet_fortigate.*` and the time range to the last 30 minutes.
+2. Drag `rule.name` from the field list onto the canvas. Lens draws a bar chart of the firewall rules hit.
+3. Optionally drag `source.ip` onto the canvas as a breakdown, so each bar splits by sender.
+4. Click Save and return to add the panel to the dashboard.
+
+The chart shows which firewall rules matched the most traffic, and who is sending it. `ENG-to-PLC-S7` from
+10.20.3.21 (the engineering workstation) is the rule tied to the Claroty alert.
+
+Say: "I did not write a query. I picked two fields and Kibana drew the chart. This is how your team builds a board, so
+there is no need for thousands of saved queries."
+
+Check before the demo: `rule.name` only has values when the FortiGate syslog lines contain `policyname`. If the field is
+missing from the list, use whichever policy name field appears. Run `./scripts/run-scenario.sh scenario` first so the
+chart has data. Delete the scratch dashboard afterwards.
+
 ### Optional: Claroty's own dashboards (1 min)
 
 Open the **[Logs Claroty CTD]** dashboards that ship with the integration, and set the site filter to Karins Power Plant:
