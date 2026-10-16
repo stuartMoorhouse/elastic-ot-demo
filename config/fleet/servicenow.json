@@ -1,0 +1,14 @@
+{
+  "name": "servicenow-ot-demo",
+  "description": "Listed for visibility only: every input is disabled because the demo has no ServiceNow instance. Sample incidents are bulk loaded by scripts/load-api-data.sh into logs-servicenow.event-default and parsed by this integration's ingest pipeline.",
+  "namespace": "default",
+  "policy_ids": ["__POLICY_ID__"],
+  "package": {
+    "name": "servicenow",
+    "version": "__PACKAGE_VERSION__"
+  },
+  "inputs": {
+    "servicenow-cel": { "enabled": false },
+    "servicenow-aws-s3": { "enabled": false }
+  }
+}

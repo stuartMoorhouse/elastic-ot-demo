@@ -1,0 +1,15 @@
+{
+  "name": "microsoft-defender-endpoint-ot-demo",
+  "description": "Listed for visibility only: every input is disabled because the demo has no Microsoft tenant. Sample alerts are bulk loaded by scripts/load-api-data.sh into logs-microsoft_defender_endpoint.log-default and parsed by this integration's ingest pipeline.",
+  "namespace": "default",
+  "policy_ids": ["__POLICY_ID__"],
+  "package": {
+    "name": "microsoft_defender_endpoint",
+    "version": "__PACKAGE_VERSION__"
+  },
+  "inputs": {
+    "microsoft_defender_endpoint-cel": { "enabled": false },
+    "microsoft_defender_endpoint-httpjson": { "enabled": false },
+    "microsoft_defender_endpoint-logfile": { "enabled": false }
+  }
+}
