@@ -13,7 +13,7 @@ Exactly 3 dashboards exist in either path (limit is 4). Use one path only, not b
 - "Selected asset" is hard-coded to KPP-PLC-T2 (10.20.4.12) / KPP-ENG-WS01 (10.20.3.21) in the ES|QL of dashboard 2. Making it a picker (ES|QL variable control `?asset_ip`) is a UI step.
 - Table panels with raw rows (no aggregation) are rendered as data tables with every column as a row dimension.
 - Dashboard 2 endpoint panel assumes the generator emits `host.name`, `event.category`, `event.action`, `user.name`, `process.name`. ES|QL fails with "Unknown column" if a field has never been indexed. FortiGate rule panels need `policyname` in the syslog lines so `rule.name` is populated.
-- Dashboard 3 reads `.alerts-security.alerts-default` (hidden index) and the rule name `OT - Claroty CTD alert (suppressed by asset and signature)`; they show data only after the detection rule has produced alerts.
+- Dashboard 3 reads `.alerts-security.alerts-default` (hidden index) and the Claroty rule by `rule_id` (its alert rule name is overridden with the Claroty alert name); they show data only after the detection rule has produced alerts.
 - The panels reference the Claroty data view in the Lens `textBased` state for all panels; ES|QL ignores it for the query, but verify in the UI.
 
 Note: `api/*.json` is a fallback in the Dashboards API format. It was updated for the Purdue rename only and is not kept in sync with later panel additions (raw-event drill-down, source known-good check, Meta Data Kiosk trail). Use `ot-dashboards.ndjson`.

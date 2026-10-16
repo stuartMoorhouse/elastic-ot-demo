@@ -1,13 +1,17 @@
 {
   "rule_id": "ot-demo-claroty-ctd-suppressed",
   "name": "OT - Claroty CTD alert (suppressed by asset and signature)",
-  "description": "Turns Claroty CTD alerts ingested through the Claroty CTD integration into Elastic detection alerts, grouping repeated identical alerts (same source, same destination asset and same Claroty alert name; a different source breaks out as its own alert) into a single alert with a suppressed-document count for 1 hour. Intended to keep one contextualised item per asset and signature for analyst triage.",
+  "description": "Turns Claroty CTD alerts ingested through the Claroty CTD integration into Elastic detection alerts, grouping repeated identical alerts (same source, same destination asset and same Claroty alert name; a different source breaks out as its own alert) into a single alert with a suppressed-document count for 4 hours. Intended to keep one contextualised item per asset and signature for analyst triage.",
   "type": "query",
   "language": "kuery",
   "query": "data_stream.dataset : \"claroty_ctd.event\" and event.kind : \"alert\"",
   "index": [
     "logs-claroty_ctd.event-*"
   ],
+  "rule_name_override": "claroty_ctd.event.name",
+  "investigation_fields": {
+    "field_names": ["source.ip", "destination.ip", "claroty_ctd.event.name"]
+  },
   "severity": "low",
   "risk_score": 21,
   "interval": "1m",
@@ -31,7 +35,7 @@
       "claroty_ctd.event.name"
     ],
     "duration": {
-      "value": 1,
+      "value": 4,
       "unit": "h"
     },
     "missing_fields_strategy": "suppress"

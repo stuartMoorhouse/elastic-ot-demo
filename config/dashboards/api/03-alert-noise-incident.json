@@ -40,7 +40,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM .alerts-security.alerts-default | WHERE kibana.alert.rule.name == \"OT - Claroty CTD alert (suppressed by asset and signature)\" | STATS `Grouped alerts` = COUNT(*)"
+          "query": "FROM .alerts-security.alerts-default | WHERE kibana.alert.rule.rule_id == \"ot-demo-claroty-ctd-suppressed\" | STATS `Grouped alerts` = COUNT(*)"
         },
         "metrics": [
           {
@@ -64,7 +64,7 @@
         "type": "metric",
         "data_source": {
           "type": "esql",
-          "query": "FROM .alerts-security.alerts-default | WHERE kibana.alert.rule.name == \"OT - Claroty CTD alert (suppressed by asset and signature)\" | STATS `Duplicates suppressed` = SUM(kibana.alert.suppression.docs_count)"
+          "query": "FROM .alerts-security.alerts-default | WHERE kibana.alert.rule.rule_id == \"ot-demo-claroty-ctd-suppressed\" | STATS `Duplicates suppressed` = SUM(kibana.alert.suppression.docs_count)"
         },
         "metrics": [
           {
@@ -169,7 +169,7 @@
         "type": "data_table",
         "data_source": {
           "type": "esql",
-          "query": "FROM .alerts-security.alerts-default | WHERE kibana.alert.rule.name == \"OT - Claroty CTD alert (suppressed by asset and signature)\" | SORT @timestamp DESC | LIMIT 20 | KEEP @timestamp, kibana.alert.suppression.terms.value, kibana.alert.suppression.docs_count, kibana.alert.severity, kibana.alert.workflow_status"
+          "query": "FROM .alerts-security.alerts-default | WHERE kibana.alert.rule.rule_id == \"ot-demo-claroty-ctd-suppressed\" | SORT @timestamp DESC | LIMIT 20 | KEEP @timestamp, kibana.alert.suppression.terms.value, kibana.alert.suppression.docs_count, kibana.alert.severity, kibana.alert.workflow_status"
         },
         "metrics": [
           {

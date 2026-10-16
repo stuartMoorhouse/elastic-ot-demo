@@ -42,8 +42,9 @@ else
 fi
 
 # ---- alerts --------------------------------------------------------------
-names="$(jq -s -c '[.[].name]' "${RULES[@]}")"
-aq="$(jq -n --argjson n "$names" '{query:{bool:{filter:[{terms:{"kibana.alert.rule.name":$n}}]}}}')"
+# Match on rule_id: the Claroty rule overrides the alert's rule name with the Claroty alert name.
+names="$(jq -s -c '[.[].rule_id]' "${RULES[@]}")"
+aq="$(jq -n --argjson n "$names" '{query:{bool:{filter:[{terms:{"kibana.alert.rule.rule_id":$n}}]}}}')"
 if es POST "/$ALERTS_INDEX/_delete_by_query?refresh=true&conflicts=proceed" -d "$aq" && is_2xx; then
   log "deleted $(printf '%s' "$HTTP_BODY" | jq -r '.deleted') alert(s) for the demo rules"
 else

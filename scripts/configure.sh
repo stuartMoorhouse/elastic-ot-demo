@@ -152,7 +152,7 @@ log "configuration complete (config_ready=true)"
 # Needs SSH to the host (Claroty and FortiGate lines go through the agent). Not fatal: run it later with
 # ./scripts/run-scenario.sh ews-compromise. The agent must already be running its policy, or the lines are lost.
 if "$LIB_DIR/run-scenario.sh" ews-compromise; then
-  log "EWS compromise sequence sent; the correlation rule alerts on its next run (15m interval)"
+  log "EWS compromise sequence sent; the correlation rule alerts on its next run (1m interval)"
 else
   warn "EWS compromise sequence not sent; run ./scripts/run-scenario.sh ews-compromise once the host agent is up"
 fi

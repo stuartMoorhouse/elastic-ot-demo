@@ -4,7 +4,7 @@
 Modes:
   noise     continuous background traffic + repetitive low-severity Claroty alerts
   backfill  history with historical timestamps (--hours N)
-  ews-compromise  one-shot VPN hops and Claroty PLC program downloads on KPP-ENG-WS02 (ews-defender adds the
+  ews-compromise  one-shot VPN hops and Claroty PLC configuration changes on KPP-ENG-WS02 (ews-defender adds the
             Defender alert between them as bulk lines)
   scenario  false-positive storyline (burst of identical Claroty alerts, FortiGate
             ENG-to-PLC-S7 hits, engineer logon + TIA Portal process)
@@ -65,6 +65,7 @@ THREAT_ALERTS = [("PLC_PROG_DL", "PLC Program Download Detected", 8),
 EWS2 = ASSETS["KPP-ENG-WS02"]
 VPN_POOL_IP = "10.99.0.15"  # inside the rule's VPN pool CIDR 10.99.0.0/24
 VPN_USER = "contractor.hale"
+EWS_ALERT = ("PLC_CFG_CHG", "PLC Configuration Change", 9)
 FLOW_VPN_EWS = (18, "SSLVPN-to-EWS-RDP", VPN_POOL_IP, EWS2, "RDP", 3389, 6, "ssl.root", "port2")
 ENDPOINT_FILE = "/var/log/ot-demo/endpoint.ndjson"
 KIOSK = "KPP-USB-KIOSK01"
@@ -1049,17 +1050,18 @@ def run_api_data(a, sink):
 def run_ews_compromise(a, sink):
     """One-shot sequence for the "OT: VPN access, EWS compromise and PLC change" rule, sent through the agent (run on
     the host by `run-scenario.sh ews-compromise`). Relative to the base time: VPN-pool RDP to KPP-ENG-WS02 (-6 min),
-    then Claroty PLC program downloads from it (-2 and -1 min). The Defender alert in between (-4 min) is bulk loaded
+    then Claroty PLC configuration changes from it (-2 and -1 min). The Defender alert in between (-4 min) is bulk loaded
     by the ews-defender mode. A separate workstation keeps the ENG-WS01 false-positive storyline and its noise alerts
     from interfering with the rule's ordering check."""
     t0 = a.base_time or time.time()
     for i in range(3):
         t = t0 - 360 + i * 20
         sink.fgt(fgt_line(t, FLOW_VPN_EWS, user=VPN_USER))
-    sid, name, sev = THREAT_ALERTS[0]
+    # A distinct alert name keeps this alert separate from the ENG-WS01 noise alerts in the Alerts table; the rule matches it.
+    sid, name, sev = EWS_ALERT
     for i in range(2):
         sink.claroty(claroty_line(t0 - 120 + i * 60, sid, name, sev, EWS2, PLC))
-    print("ews-compromise done: VPN %s -> %s, Claroty program download from it" % (VPN_POOL_IP, EWS2), file=sys.stderr)
+    print("ews-compromise done: VPN %s -> %s, Claroty PLC configuration change from it" % (VPN_POOL_IP, EWS2), file=sys.stderr)
 
 
 def run_ews_defender(a, sink):

@@ -56,7 +56,7 @@ Then follow `demo-steps.md`. Tear down with `terraform -chdir=infra destroy`.
 from same workstation") that joins three sources on the engineering workstation (EWS) IP: a FortiGate connection from the
 VPN pool (10.99.0.0/24) to the EWS on RDP, SMB or WinRM, a Microsoft Defender alert on the EWS, and a Claroty CTD PLC
 modification alert originating from the EWS, in that order. Each is low confidence alone; together they suggest stolen
-remote-access credentials used to tamper with a PLC. It runs every 15 minutes over the last 255 minutes, is enabled by
+remote-access credentials used to tamper with a PLC. It runs every minute over the last 255 minutes, is enabled by
 default, and suppresses repeat alerts per EWS IP for 4 hours, so one sequence gives one alert.
 
 Field mapping to this deployment (the integrations differ from generic ECS): the EWS IP is `destination.ip` for FortiGate,
@@ -73,11 +73,11 @@ generator and the ENG-WS01 false-positive storyline never trigger it:
 - `./scripts/run-scenario.sh ews-compromise` sends it on demand.
 
 The sequence, timed relative to the run: VPN-pool RDP to the EWS (6 min before), Defender alert "Suspicious PowerShell
-command line" on it (4 min before), Claroty "PLC Program Download Detected" from it (2 and 1 min before). The rule raises
-one high-severity alert for 10.20.3.22 on its next run, up to 15 minutes later. Open it in Security > Alerts.
+command line" on it (4 min before), Claroty "PLC Configuration Change" from it (2 and 1 min before). The rule raises
+one high-severity alert for 10.20.3.22 on its next run, within about a minute. Open it in Security > Alerts.
 
 Assumptions not verified against real products: the VPN pool CIDR and ports, the Claroty alert names other than
-"PLC Program Download Detected", and the Defender evidence shape carrying `ipAddress`. The MITRE ATT&CK for ICS
+"PLC Program Download Detected" and "PLC Configuration Change", and the Defender evidence shape carrying `ipAddress`. The MITRE ATT&CK for ICS
 techniques (T0836, T0843) are carried as tags and references because the rule `threat` field is Enterprise only.
 After changing `scripts/generator/ot_generator.py`, run `terraform -chdir=infra apply` to ship it to the host.
 

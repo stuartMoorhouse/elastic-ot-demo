@@ -90,7 +90,8 @@ resource "terraform_data" "generator" {
 
   # Wait for cloud-init (user-data) to finish before copying.
   provisioner "remote-exec" {
-    inline = ["cloud-init status --wait || true", "test -d /opt/ot-demo"]
+    # chown: a root-owned copy (written via sudo) cannot be overwritten by the ubuntu scp upload below.
+    inline = ["cloud-init status --wait || true", "test -d /opt/ot-demo", "sudo chown ubuntu:ubuntu /opt/ot-demo/ot_generator.py 2>/dev/null || true"]
   }
 
   provisioner "file" {

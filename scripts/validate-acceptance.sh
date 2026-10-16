@@ -123,7 +123,7 @@ c5() {
   local rname raw alerts docs
   rname="$(jq -r '.name' "$RULE")"
   raw="$(count logs-claroty_ctd.event-default "{\"query\":{\"bool\":{\"filter\":[{\"term\":{\"event.kind\":\"alert\"}},{\"range\":{\"@timestamp\":{\"gte\":\"now-$WINDOW\"}}}]}}}")"
-  if ! es POST "/$ALERTS_INDEX/_search" -d "$(jq -n --arg n "$rname" '{size:0,query:{bool:{filter:[{term:{"kibana.alert.rule.name":$n}}]}},aggs:{docs:{sum:{field:"kibana.alert.suppression.docs_count"}}}}')" || ! is_2xx; then
+  if ! es POST "/$ALERTS_INDEX/_search" -d "$(jq -n --arg n "$(jq -r .rule_id "$RULE")" '{size:0,query:{bool:{filter:[{term:{"kibana.alert.rule.rule_id":$n}}]}},aggs:{docs:{sum:{field:"kibana.alert.suppression.docs_count"}}}}')" || ! is_2xx; then
     record 5 "Alert suppression" FAIL "alert search failed: HTTP $HTTP_CODE"; return
   fi
   alerts="$(printf '%s' "$HTTP_BODY" | jq -r '.hits.total.value')"
@@ -141,7 +141,7 @@ c6() {
   t0="$(now_epoch)"
   trig="$(env_get scenario_triggered_at)"
   rname="$(jq -r '.name' "$RULE")"
-  es POST "/$ALERTS_INDEX/_search" -d "$(jq -n --arg n "$rname" '{size:1,sort:[{"@timestamp":"desc"}],query:{bool:{filter:[{term:{"kibana.alert.rule.name":$n}}]}},_source:["kibana.alert.rule.uuid"]}')" || true
+  es POST "/$ALERTS_INDEX/_search" -d "$(jq -n --arg n "$(jq -r .rule_id "$RULE")" '{size:1,sort:[{"@timestamp":"desc"}],query:{bool:{filter:[{term:{"kibana.alert.rule.rule_id":$n}}]}},_source:["kibana.alert.rule.uuid"]}')" || true
   alert_id="$(printf '%s' "$HTTP_BODY" | jq -r '.hits.hits[0]._id // empty')"
   alert_index="$(printf '%s' "$HTTP_BODY" | jq -r '.hits.hits[0]._index // empty')"
   rule_id="$(printf '%s' "$HTTP_BODY" | jq -r '.hits.hits[0]._source["kibana.alert.rule.uuid"] // .hits.hits[0]._source.kibana.alert.rule.uuid // empty')"
@@ -180,7 +180,7 @@ c6() {
 c9() {
   local unk="${UNKNOWN_IP:-10.20.9.77}" rname n inv
   rname="$(jq -r '.name' "$RULE")"
-  es POST "/$ALERTS_INDEX/_search" -d "$(jq -n --arg n "$rname" --arg ip "$unk" '{size:0,track_total_hits:true,query:{bool:{filter:[{term:{"kibana.alert.rule.name":$n}},{term:{"source.ip":$ip}}]}}}')" || true
+  es POST "/$ALERTS_INDEX/_search" -d "$(jq -n --arg n "$(jq -r .rule_id "$RULE")" --arg ip "$unk" '{size:0,track_total_hits:true,query:{bool:{filter:[{term:{"kibana.alert.rule.rule_id":$n}},{term:{"source.ip":$ip}}]}}}')" || true
   is_2xx || { record 9 "Contrast: unmanaged source breaks out" FAIL "alert search failed: HTTP $HTTP_CODE"; return; }
   n="$(printf '%s' "$HTTP_BODY" | jq -r '.hits.total.value')"
   es POST "/ot-assets/_count" -d "$(jq -n --arg ip "$unk" '{query:{term:{"asset.ip":$ip}}}')" || true
